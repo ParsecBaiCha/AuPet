@@ -40,6 +40,7 @@ const routes = [
       { path: 'trend-prediction', name: 'TrendPrediction', meta: { title: '群体趋势预测', icon: 'TrendCharts' }, component: () => import('../views/teacher/TrendPrediction.vue') },
       { path: 'intervention', name: 'Intervention', meta: { title: '干预管理', icon: 'WarningFilled' }, component: () => import('../views/teacher/Intervention.vue') },
       { path: 'forum', name: 'TeacherForum', meta: { title: '交流论坛', icon: 'ChatDotRound' }, component: () => import('../views/teacher/Forum.vue') },
+      { path: 'materials', name: 'TeacherMaterials', meta: { title: '资料管理', icon: 'FolderOpened' }, component: () => import('../views/teacher/MaterialUpload.vue') },
     ],
   },
   {

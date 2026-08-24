@@ -72,6 +72,11 @@
             <el-icon><ChatDotSquare /></el-icon>
             <span>交流论坛</span>
           </router-link>
+
+          <router-link to="/teacher/materials" class="nav-item" :class="{ active: route.path === '/teacher/materials' }">
+            <el-icon><FolderOpened /></el-icon>
+            <span>资料管理</span>
+          </router-link>
         </nav>
       </aside>
 
@@ -97,7 +102,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '../../stores/app'
 import {
   HomeFilled, Coin, OfficeBuilding, UserFilled, Connection,
-  DataLine, WarningFilled, ChatDotSquare, Bell, Message
+  DataLine, WarningFilled, ChatDotSquare, Bell, Message, FolderOpened
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -123,6 +128,7 @@ const pageTitle = computed(() => {
     '/teacher/trend-prediction': '群体趋势预测',
     '/teacher/intervention': '干预管理',
     '/teacher/forum': '交流论坛',
+    '/teacher/materials': '资料管理',
   }
   return pathMap[route.path] || '教师工作台'
 })

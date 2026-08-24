@@ -32,6 +32,8 @@ export const studentApi = {
   generateBook: (data: { topic: string; courseId?: number }) =>
     api.post('/student/ai/picture-book/generate', data),
   getBooks: () => sGet('/student/ai/picture-books'),
+  getBook: (id: number) => sGet(`/student/ai/picture-books/${id}`),
+  toggleBookFavorite: (id: number) => api.post(`/student/ai/picture-books/${id}/favorite`),
   generateAnimation: (data: { topic: string; courseId?: number }) =>
     api.post('/student/ai/animation/generate', data),
   getLearningPath: () => sGet('/student/ai/learning-path'),
@@ -42,6 +44,7 @@ export const studentApi = {
   clearChat: () => api.post('/student/chat/clear'),
   rollbackChat: () => api.post('/student/chat/rollback'),
   getMaterials: (courseId?: number) => sGet(`/student/ai/materials${courseId ? '?courseId=' + courseId : ''}`),
+  getTeacherMaterials: () => sGet('/student/ai/teacher-materials'),
   getSuggestedQuestions: (courseId?: number, topic?: string) => {
     let url = '/student/ai/suggested-questions?'
     if (courseId) url += `courseId=${courseId}&`

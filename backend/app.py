@@ -752,6 +752,55 @@ def teacher_forum_boards():
     return jsonify([{'id': r['id'], 'name': r['name'], 'count': r['count']} for r in rows])
 
 
+# ---- 教师资料管理 ----
+@app.route('/api/teacher/materials', methods=['GET'])
+@login_required
+def teacher_materials_list():
+    tid = request.login_user['id']
+    rows = query('SELECT * FROM teacher_materials WHERE teacher_id=%s ORDER BY id DESC', (tid,))
+    return jsonify([{'id': r['id'], 'title': r['title'], 'description': r['description'],
+                     'url': r['url'], 'type': r['material_type'],
+                     'courseId': r['course_id'],
+                     'createdAt': str(r['created_at'])[:10]} for r in rows])
+
+
+@app.route('/api/teacher/materials', methods=['POST'])
+@login_required
+def teacher_materials_upload():
+    tid = request.login_user['id']
+    data = request.get_json(silent=True) or {}
+    title = (data.get('title') or '').strip()
+    url = (data.get('url') or '').strip()
+    if not title or not url:
+        return jsonify({'success': False, 'message': '标题和链接不能为空'}), 400
+    execute('INSERT INTO teacher_materials(teacher_id,title,description,url,material_type,course_id) VALUES(%s,%s,%s,%s,%s,%s)',
+            (tid, title, data.get('description', ''), url,
+             data.get('type', 'link'), data.get('courseId', 0)))
+    return jsonify({'success': True, 'message': '上传成功'})
+
+
+@app.route('/api/teacher/materials/<int:mid>', methods=['DELETE'])
+@login_required
+def teacher_materials_delete(mid):
+    tid = request.login_user['id']
+    cnt = execute('DELETE FROM teacher_materials WHERE id=%s AND teacher_id=%s', (mid, tid))
+    if cnt == 0:
+        return jsonify({'success': False, 'message': '资料不存在或无权删除'}), 404
+    return jsonify({'success': True, 'message': '已删除'})
+
+
+# ---- 学生获取教师上传资料 ----
+@app.route('/api/student/ai/teacher-materials', methods=['GET'])
+@login_required
+def student_teacher_materials():
+    rows = query('SELECT tm.*, t.name teacher_name FROM teacher_materials tm '
+                 'JOIN teachers t ON tm.teacher_id=t.id ORDER BY tm.id DESC')
+    return jsonify([{'id': r['id'], 'title': r['title'], 'description': r['description'],
+                     'url': r['url'], 'type': r['material_type'],
+                     'teacherName': r['teacher_name'],
+                     'createdAt': str(r['created_at'])[:10]} for r in rows])
+
+
 # ================================================================
 #  管理员端接口
 # ================================================================
@@ -1060,9 +1109,6 @@ def ai_quiz_generate():
     s = query('SELECT grade_level FROM students WHERE id=%s', (sid,), one=True)
     grade = (s['grade_level'] if s and s['grade_level'] else 'upper_primary') or 'upper_primary'
     questions = llm_service.generate_quiz(topic, grade, count)
-    # 记录学习行为
-    execute('INSERT INTO learning_records(student_id,course_id,topic,learn_type) VALUES(%s,%s,%s,%s)',
-            (sid, data.get('courseId', 0), topic, 'quiz'))
     return jsonify({'questions': questions, 'topic': topic})
 
 
@@ -1107,7 +1153,38 @@ def ai_book_list():
     sid = request.login_user['id']
     rows = query('SELECT * FROM picture_books WHERE student_id=%s ORDER BY id DESC LIMIT 10', (sid,))
     return jsonify([{'id': r['id'], 'title': r['title'], 'topic': r['topic'],
-                     'createdAt': str(r['created_at'])[:10]} for r in rows])
+                     'createdAt': str(r['created_at'])[:10],
+                     'isFavorite': bool(r.get('is_favorite', 0))} for r in rows])
+
+
+@app.route('/api/student/ai/picture-books/<int:bid>', methods=['GET'])
+@login_required
+def ai_book_detail(bid):
+    sid = request.login_user['id']
+    r = query('SELECT * FROM picture_books WHERE id=%s AND student_id=%s', (bid, sid), one=True)
+    if not r:
+        return jsonify({'success': False, 'message': '绘本不存在'}), 404
+    try:
+        content = json.loads(r['content']) if r['content'] else {}
+    except Exception:
+        content = {}
+    return jsonify({'id': r['id'], 'title': r['title'], 'topic': r['topic'],
+                    'createdAt': str(r['created_at'])[:10],
+                    'isFavorite': bool(r.get('is_favorite', 0)),
+                    'pages': content.get('pages', []),
+                    'bookTitle': content.get('title', r['title'])})
+
+
+@app.route('/api/student/ai/picture-books/<int:bid>/favorite', methods=['POST'])
+@login_required
+def ai_book_favorite(bid):
+    sid = request.login_user['id']
+    r = query('SELECT is_favorite FROM picture_books WHERE id=%s AND student_id=%s', (bid, sid), one=True)
+    if not r:
+        return jsonify({'success': False, 'message': '绘本不存在'}), 404
+    new_val = 0 if r['is_favorite'] else 1
+    execute('UPDATE picture_books SET is_favorite=%s WHERE id=%s', (new_val, bid))
+    return jsonify({'success': True, 'isFavorite': bool(new_val)})
 
 
 @app.route('/api/student/ai/animation/generate', methods=['POST'])
@@ -1131,11 +1208,12 @@ def ai_learning_path():
     sid = request.login_user['id']
     s = query('SELECT grade_level FROM students WHERE id=%s', (sid,), one=True)
     grade = (s['grade_level'] if s and s['grade_level'] else 'upper_primary') or 'upper_primary'
-    # 获取已学知识点
-    learned = query('SELECT DISTINCT topic FROM learning_records WHERE student_id=%s AND topic IS NOT NULL', (sid,))
+    # 已学知识点：只有测验满分100才算掌握
+    learned = query('SELECT DISTINCT topic FROM learning_records WHERE student_id=%s AND topic IS NOT NULL AND learn_type=%s AND score=100',
+                    (sid, 'quiz'))
     learned_topics = [r['topic'] for r in learned] if learned else []
-    # 获取最近测验成绩
-    quizzes = query('SELECT score FROM learning_records WHERE student_id=%s AND learn_type=%s ORDER BY id DESC LIMIT 3',
+    # 最近测验成绩：只取有分数的记录
+    quizzes = query('SELECT score FROM learning_records WHERE student_id=%s AND learn_type=%s AND score IS NOT NULL ORDER BY id DESC LIMIT 3',
                     (sid, 'quiz'))
     scores = [r['score'] for r in quizzes] if quizzes else []
     suggestion = llm_service.generate_learning_suggestion(grade, learned_topics, scores)

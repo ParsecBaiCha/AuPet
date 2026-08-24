@@ -53,7 +53,7 @@ const activeTab = ref('chat')
 const tabs = [
   { key: 'chat', label: 'AI对话', icon: 'AI' },
   { key: 'materials', label: '学习资料', icon: '料' },
-  { key: 'quiz', label: '游戏化练习', icon: '练' },
+  { key: 'quiz', label: '云笺小试', icon: '试' },
   { key: 'animation', label: '动画讲解', icon: '动' },
   { key: 'book', label: '绘本生成', icon: '本' },
   { key: 'path', label: '学习路径', icon: '路' },
@@ -141,7 +141,7 @@ const sendQuickQuestion = (q: string) => {
 }
 
 // ===== 聊天记录管理 =====
-const editingMsgId = ref<number>(0)
+const editingMsgId = ref<number>(-1)
 const editingText = ref('')
 
 const startEdit = (msg: ChatMessage) => {
@@ -150,17 +150,17 @@ const startEdit = (msg: ChatMessage) => {
 }
 
 const cancelEdit = () => {
-  editingMsgId.value = 0
+  editingMsgId.value = -1
   editingText.value = ''
 }
 
 const saveEdit = async () => {
-  if (!editingText.value.trim() || editingMsgId.value === 0) return
+  if (!editingText.value.trim() || editingMsgId.value === -1) return
   try {
     await studentApi.editChatMessage(editingMsgId.value, editingText.value.trim())
     const msg = chatMessages.value.find(m => m.id === editingMsgId.value)
     if (msg) msg.content = editingText.value.trim()
-    editingMsgId.value = 0
+    editingMsgId.value = -1
     editingText.value = ''
   } catch (e) { /* silently fail */ }
 }
@@ -203,32 +203,44 @@ const clearChat = async () => {
   try {
     await ElMessageBox.confirm('确定清空当前聊天记录吗？此操作不可恢复。', '清空聊天', { type: 'warning', confirmButtonText: '确定', cancelButtonText: '不确定' })
     await studentApi.clearChat()
+    editingMsgId.value = -1
+    editingText.value = ''
     chatMessages.value = [{
-      id: 0,
-      type: 'assistant',
-      content: '你好呀！我是你的AI学习伙伴！\n想了解什么知识呢？可以问我任何问题哦~',
-      time: nowTime(),
-    }]
+            id: 0,
+            type: 'assistant',
+            content: '很高兴又能和你聊天了！今天有什么困惑吗？我来帮帮你！',
+            time: nowTime(),
+          }]
   } catch (e) { /* cancelled */ }
 }
 
-// ===== 游戏化练习 =====
+// ===== 游戏化练习 (闯关模式) =====
 const quizQuestions = ref<any[]>([])
 const quizAnswers = ref<number[]>([])
 const quizResult = ref<any>(null)
 const quizLoading = ref(false)
-const quizSubmitted = ref(false)
+const quizStage = ref<'idle' | 'playing' | 'finished'>('idle')
+const quizCurrentIdx = ref(0)
+const quizCorrectCount = ref(0)
+const quizAnsweredFlags = ref<boolean[]>([])
+const quizFeedback = ref<'none' | 'correct' | 'wrong'>('none')
 
 const generateQuiz = async () => {
   const topic = selectedTopic.value || '人工智能基础'
   quizLoading.value = true
   quizResult.value = null
-  quizSubmitted.value = false
+  quizStage.value = 'idle'
+  quizCurrentIdx.value = 0
+  quizCorrectCount.value = 0
+  quizFeedback.value = 'none'
   try {
     const data: any = await studentApi.generateQuiz({ topic, count: 3, courseId: selectedCourse.value?.id })
     quizQuestions.value = data?.questions || []
     quizAnswers.value = new Array(quizQuestions.value.length).fill(-1)
-    if (quizQuestions.value.length === 0) {
+    quizAnsweredFlags.value = new Array(quizQuestions.value.length).fill(false)
+    if (quizQuestions.value.length > 0) {
+      quizStage.value = 'playing'
+    } else {
       ElMessage.warning('题目生成失败，请重试')
     }
   } catch (e) {
@@ -238,17 +250,28 @@ const generateQuiz = async () => {
   }
 }
 
-const selectAnswer = (qIdx: number, aIdx: number) => {
-  if (quizSubmitted.value) return
+const answerQuestion = (qIdx: number, aIdx: number) => {
+  if (quizAnsweredFlags.value[qIdx]) return
   quizAnswers.value[qIdx] = aIdx
+  quizAnsweredFlags.value[qIdx] = true
+  const isCorrect = aIdx === quizQuestions.value[qIdx].answer
+  if (isCorrect) {
+    quizCorrectCount.value++
+    quizFeedback.value = 'correct'
+  } else {
+    quizFeedback.value = 'wrong'
+  }
+  setTimeout(() => {
+    if (quizCurrentIdx.value < quizQuestions.value.length - 1) {
+      quizCurrentIdx.value++
+      quizFeedback.value = 'none'
+    } else {
+      finishQuiz()
+    }
+  }, 1800)
 }
 
-const submitQuiz = async () => {
-  if (quizAnswers.value.some(a => a < 0)) {
-    ElMessage.warning('请完成所有题目后再提交')
-    return
-  }
-  quizLoading.value = true
+const finishQuiz = async () => {
   try {
     const result: any = await studentApi.gradeQuiz({
       questions: quizQuestions.value,
@@ -257,15 +280,29 @@ const submitQuiz = async () => {
       courseId: selectedCourse.value?.id,
     })
     quizResult.value = result
-    quizSubmitted.value = true
+    quizStage.value = 'finished'
     if (result.correct > 0) {
       ElMessage.success(`答对${result.correct}题，获得${result.correct * 3}积分奖励！`)
     }
   } catch (e) {
-    ElMessage.error('提交失败，请稍后重试')
-  } finally {
-    quizLoading.value = false
+    quizResult.value = {
+      total: quizQuestions.value.length,
+      correct: quizCorrectCount.value,
+      score: Math.round(quizCorrectCount.value / Math.max(quizQuestions.value.length, 1) * 100),
+    }
+    quizStage.value = 'finished'
   }
+}
+
+const resetQuiz = () => {
+  quizStage.value = 'idle'
+  quizQuestions.value = []
+  quizAnswers.value = []
+  quizResult.value = null
+  quizCurrentIdx.value = 0
+  quizCorrectCount.value = 0
+  quizFeedback.value = 'none'
+  quizAnsweredFlags.value = []
 }
 
 // ===== 动画讲解 =====
@@ -324,9 +361,34 @@ const prevBookPage = () => {
   if (bookPage.value > 0) bookPage.value--
 }
 
+const viewHistoryBook = async (b: any) => {
+  try {
+    const data: any = await studentApi.getBook(b.id)
+    bookData.value = {
+      title: data.bookTitle || data.title || b.title,
+      pages: data.pages || [],
+    }
+    bookPage.value = 0
+    bookLoading.value = false
+  } catch (e) {
+    ElMessage.error('加载绘本失败')
+  }
+}
+
+const toggleFavorite = async (b: any) => {
+  try {
+    const data: any = await studentApi.toggleBookFavorite(b.id)
+    b.isFavorite = data.isFavorite
+    ElMessage.success(data.isFavorite ? '已收藏' : '已取消收藏')
+  } catch (e) {
+    ElMessage.error('操作失败')
+  }
+}
+
 // ===== 学习资料 =====
 const materials = ref<any[]>([])
 const materialsLoading = ref(false)
+const materialsSubTab = ref('recommended')
 
 const materialTypeIcon: Record<string, string> = {
   video: '[视频]',
@@ -344,6 +406,22 @@ const loadMaterials = async () => {
     materials.value = []
   } finally {
     materialsLoading.value = false
+  }
+}
+
+// ===== 教师资料 =====
+const teacherMaterials = ref<any[]>([])
+const teacherMaterialsLoading = ref(false)
+
+const loadTeacherMaterials = async () => {
+  teacherMaterialsLoading.value = true
+  try {
+    const data: any = await studentApi.getTeacherMaterials()
+    teacherMaterials.value = Array.isArray(data) ? data : []
+  } catch (e) {
+    teacherMaterials.value = []
+  } finally {
+    teacherMaterialsLoading.value = false
   }
 }
 
@@ -367,8 +445,12 @@ const loadLearningPath = async () => {
 watch(activeTab, (tab) => {
   if (tab === 'path' && !learningPath.value) loadLearningPath()
   if (tab === 'book' && bookList.value.length === 0) loadBookList()
-  if (tab === 'materials') loadMaterials()
-})
+  if (tab === 'materials') {
+    if (materialsSubTab.value === 'recommended') loadMaterials()
+    else loadTeacherMaterials()
+  }
+  if (tab === 'quiz' && quizStage.value === 'idle') generateQuiz()
+  })
 
 // ===== 加载数据 =====
 const loadCourses = async () => {
@@ -437,19 +519,19 @@ onMounted(async () => {
       scrollChat()
     } else {
       chatMessages.value = [{
-        id: 0,
-        type: 'assistant',
-        content: '你好呀！我是你的AI学习伙伴！\n想了解人工智能的什么知识呢？可以问我任何问题哦~',
-        time: nowTime(),
-      }]
+  id: 0,
+  type: 'assistant',
+  content: '很高兴又能和你聊天了！今天有什么困惑吗？我来帮帮你！',
+  time: nowTime(),
+  }]
     }
   } catch (e) {
     chatMessages.value = [{
-      id: 0,
-      type: 'assistant',
-      content: '你好呀！我是你的AI学习伙伴！\n想了解人工智能的什么知识呢？',
-      time: nowTime(),
-    }]
+  id: 0,
+  type: 'assistant',
+  content: '很高兴又能和你聊天了！今天有什么困惑吗？我来帮帮你！',
+  time: nowTime(),
+  }]
   }
 
   // 确保宠物信息
@@ -590,52 +672,99 @@ onMounted(async () => {
 
       <!-- 学习资料 -->
       <div v-if="activeTab === 'materials'" class="tab-content materials-tab">
-        <div class="materials-header">
-          <h3>学习资料</h3>
-          <p class="materials-hint" v-if="selectedTopic">
-            当前专题：{{ selectedTopic }} - 点击下方资料链接进行学习
-          </p>
-          <p class="materials-hint" v-else>
-            请先在左侧选择一个课程专题，查看对应的学习资料
-          </p>
-          <button @click="loadMaterials" :disabled="materialsLoading" class="action-btn" v-if="selectedCourse">
-            {{ materialsLoading ? '加载中...' : '刷新资料' }}
-          </button>
+        <div class="materials-sub-tabs">
+          <button class="sub-tab-btn" :class="{ active: materialsSubTab === 'recommended' }"
+            @click="materialsSubTab = 'recommended'; loadMaterials()">推荐资料</button>
+          <button class="sub-tab-btn" :class="{ active: materialsSubTab === 'teacher' }"
+            @click="materialsSubTab = 'teacher'; loadTeacherMaterials()">教师资料</button>
         </div>
 
-        <div v-if="materialsLoading" class="loading-state">
-          <div class="loading-spinner"></div>
-          <p>正在加载学习资料...</p>
-        </div>
+        <!-- 推荐资料 -->
+        <template v-if="materialsSubTab === 'recommended'">
+          <div class="materials-header">
+            <h3>推荐资料</h3>
+            <p class="materials-hint" v-if="selectedTopic">
+              当前专题：{{ selectedTopic }} - 点击下方资料链接进行学习
+            </p>
+            <p class="materials-hint" v-else>
+              请先在左侧选择一个课程专题，查看对应的学习资料
+            </p>
+          </div>
 
-        <div v-else-if="materials.length > 0" class="materials-list">
-          <a v-for="m in materials" :key="m.id"
-             :href="m.url" target="_blank" rel="noopener"
-             class="material-card">
-            <div class="material-icon">{{ materialTypeIcon[m.type] || '[资料]' }}</div>
-            <div class="material-info">
-              <div class="material-title">{{ m.title }}</div>
-              <div class="material-desc" v-if="m.description">{{ m.description }}</div>
-            </div>
-            <span class="material-go">查看 &gt;</span>
-          </a>
-        </div>
+          <div v-if="materialsLoading" class="loading-state">
+            <div class="loading-spinner"></div>
+            <p>正在加载学习资料...</p>
+          </div>
 
-        <div v-else class="empty-state">
-          <div class="empty-icon">[资料]</div>
-          <p v-if="selectedCourse">暂无学习资料，请稍后再试</p>
-          <p v-else>请先在左侧选择一个课程专题</p>
-        </div>
+          <div v-else-if="materials.length > 0" class="materials-list">
+            <a v-for="m in materials" :key="m.id"
+               :href="m.url" target="_blank" rel="noopener"
+               class="material-card">
+              <div class="material-icon">{{ materialTypeIcon[m.type] || '[资料]' }}</div>
+              <div class="material-info">
+                <div class="material-title">{{ m.title }}</div>
+                <div class="material-desc" v-if="m.description">{{ m.description }}</div>
+              </div>
+              <span class="material-go">查看 &gt;</span>
+            </a>
+          </div>
+
+          <div v-else class="empty-state">
+            <div class="empty-icon">[资料]</div>
+            <p v-if="selectedCourse">暂无学习资料，请稍后再试</p>
+            <p v-else>请先在左侧选择一个课程专题</p>
+          </div>
+        </template>
+
+        <!-- 教师资料 -->
+        <template v-else>
+          <div class="materials-header">
+            <h3>教师资料</h3>
+            <p class="materials-hint">老师为你整理的学习资料，点击即可跳转学习</p>
+            <button @click="loadTeacherMaterials" :disabled="teacherMaterialsLoading" class="action-btn">
+              {{ teacherMaterialsLoading ? '加载中...' : '刷新资料' }}
+            </button>
+          </div>
+
+          <div v-if="teacherMaterialsLoading" class="loading-state">
+            <div class="loading-spinner"></div>
+            <p>正在加载教师资料...</p>
+          </div>
+
+          <div v-else-if="teacherMaterials.length > 0" class="materials-list">
+            <a v-for="m in teacherMaterials" :key="m.id"
+               :href="m.url" target="_blank" rel="noopener"
+               class="material-card">
+              <div class="material-icon">{{ materialTypeIcon[m.type] || '[资料]' }}</div>
+              <div class="material-info">
+                <div class="material-title">{{ m.title }}</div>
+                <div class="material-desc" v-if="m.description">{{ m.description }}</div>
+                <div class="material-teacher">上传老师：{{ m.teacherName }} · {{ m.createdAt }}</div>
+              </div>
+              <span class="material-go">查看 &gt;</span>
+            </a>
+          </div>
+
+          <div v-else class="empty-state">
+            <div class="empty-icon">[师]</div>
+            <p>老师还没有上传资料，敬请期待~</p>
+          </div>
+        </template>
       </div>
 
       <!-- 游戏化练习 -->
       <div v-if="activeTab === 'quiz'" class="tab-content quiz-tab">
         <div class="quiz-header">
-          <h3>游戏化练习</h3>
-          <p class="quiz-hint">选择左侧课程或直接生成练习题，答对每题奖励3积分！</p>
-          <button @click="generateQuiz" :disabled="quizLoading" class="action-btn">
-            {{ quizLoading ? '生成中...' : (quizSubmitted ? '再来一组' : '生成练习题') }}
-          </button>
+          <h3>云笺小试</h3>
+          <p class="quiz-hint">答对每题奖励3积分！</p>
+          <div class="quiz-btns">
+            <button @click="generateQuiz" :disabled="quizLoading" class="action-btn">
+              {{ quizLoading ? '生成中...' : (quizStage === 'playing' ? '换一组题' : quizStage === 'finished' ? '再来一关' : '开始闯关') }}
+            </button>
+            <button v-if="quizStage !== 'idle'" @click="resetQuiz" :disabled="quizLoading" class="action-btn quiz-reset-btn">
+              返回
+            </button>
+          </div>
         </div>
 
         <div v-if="quizLoading" class="loading-state">
@@ -643,51 +772,98 @@ onMounted(async () => {
           <p>AI正在为你出题...</p>
         </div>
 
-        <div v-else-if="quizQuestions.length > 0" class="quiz-list">
-          <div v-for="(q, qi) in quizQuestions" :key="qi" class="quiz-item">
+        <!-- 闯关地图 -->
+        <div v-else-if="quizStage === 'playing'" class="quiz-game">
+          <div class="quiz-map">
+            <template v-for="(q, qi) in quizQuestions" :key="qi">
+              <div class="map-node" :class="{
+                completed: quizAnsweredFlags[qi] && quizAnswers[qi] === q.answer,
+                failed: quizAnsweredFlags[qi] && quizAnswers[qi] !== q.answer,
+                current: qi === quizCurrentIdx,
+                locked: qi > quizCurrentIdx,
+              }">
+                <div class="node-icon">
+                  <span v-if="quizAnsweredFlags[qi] && quizAnswers[qi] === q.answer" class="node-check">OK</span>
+                  <span v-else-if="quizAnsweredFlags[qi]" class="node-cross">X</span>
+                  <span v-else-if="qi === quizCurrentIdx" class="node-current">{{ qi + 1 }}</span>
+                  <span v-else class="node-num">{{ qi + 1 }}</span>
+                </div>
+                <div class="node-label">第{{ qi + 1 }}关</div>
+              </div>
+              <div v-if="qi < quizQuestions.length - 1" class="map-connector" :class="{ active: qi < quizCurrentIdx }"></div>
+            </template>
+            <div class="map-connector" :class="{ active: quizCurrentIdx >= quizQuestions.length - 1 && quizAnsweredFlags[quizQuestions.length - 1] }"></div>
+            <div class="map-node treasure" :class="{ reached: quizStage === 'finished' || (quizCurrentIdx === quizQuestions.length - 1 && quizAnsweredFlags[quizCurrentIdx]) }">
+              <div class="node-icon treasure-icon">BAG</div>
+              <div class="node-label">宝箱</div>
+            </div>
+          </div>
+
+          <!-- 当前题目 -->
+          <div class="quiz-current">
             <div class="quiz-question">
-              <span class="q-num">第{{ qi + 1 }}题</span>
-              <span class="q-text">{{ q.question }}</span>
+              <span class="q-num">第{{ quizCurrentIdx + 1 }}关</span>
+              <span class="q-text">{{ quizQuestions[quizCurrentIdx]?.question }}</span>
             </div>
             <div class="quiz-options">
-              <label v-for="(opt, oi) in q.options" :key="oi"
+              <label v-for="(opt, oi) in quizQuestions[quizCurrentIdx]?.options" :key="oi"
                      class="quiz-option"
                      :class="{
-                       selected: quizAnswers[qi] === oi,
-                       correct: quizSubmitted && oi === q.answer,
-                       wrong: quizSubmitted && quizAnswers[qi] === oi && oi !== q.answer,
+                       selected: quizAnswers[quizCurrentIdx] === oi,
+                       correct: quizFeedback !== 'none' && oi === quizQuestions[quizCurrentIdx].answer,
+                       wrong: quizFeedback === 'wrong' && quizAnswers[quizCurrentIdx] === oi && oi !== quizQuestions[quizCurrentIdx].answer,
                      }">
-                <input type="radio" :name="`q${qi}`" :checked="quizAnswers[qi] === oi"
-                       @change="selectAnswer(qi, oi)" :disabled="quizSubmitted" />
+                <input type="radio" :name="`q${quizCurrentIdx}`" :checked="quizAnswers[quizCurrentIdx] === oi"
+                       @change="answerQuestion(quizCurrentIdx, oi)" :disabled="quizFeedback !== 'none'" />
                 <span class="opt-letter">{{ String.fromCharCode(65 + oi) }}</span>
                 <span class="opt-text">{{ opt }}</span>
               </label>
             </div>
-            <div v-if="quizSubmitted" class="quiz-explanation">
-              <span class="expl-label">解析：</span>{{ q.explanation }}
+
+            <!-- 答题反馈 -->
+            <transition name="fade">
+              <div v-if="quizFeedback === 'correct'" class="quiz-feedback correct">
+                <span class="feedback-icon">OK!</span>
+                <span class="feedback-text">回答正确！球球前进一步！</span>
+              </div>
+              <div v-else-if="quizFeedback === 'wrong'" class="quiz-feedback wrong">
+                <span class="feedback-icon">X</span>
+                <span class="feedback-text">答错了，正确答案是 {{ String.fromCharCode(65 + quizQuestions[quizCurrentIdx].answer) }}</span>
+              </div>
+            </transition>
+
+            <!-- 解析 -->
+            <div v-if="quizFeedback !== 'none'" class="quiz-explanation">
+              <span class="expl-label">解析：</span>{{ quizQuestions[quizCurrentIdx]?.explanation }}
             </div>
           </div>
+        </div>
 
-          <div v-if="!quizSubmitted" class="quiz-submit-area">
-            <button @click="submitQuiz" :disabled="quizLoading" class="action-btn primary">
-              提交答案
-            </button>
+        <!-- 闯关结果 -->
+        <div v-else-if="quizStage === 'finished'" class="quiz-victory">
+          <div class="treasure-open">
+            <div class="treasure-emoji">BAG</div>
+            <p class="treasure-text">宝箱已打开！</p>
           </div>
-
-          <div v-if="quizResult" class="quiz-result">
+          <div class="quiz-result">
             <div class="result-score">
-              <span class="score-num">{{ quizResult.score }}</span>
+              <span class="score-num">{{ quizResult?.score }}</span>
               <span class="score-unit">分</span>
             </div>
             <div class="result-detail">
-              答对 {{ quizResult.correct }} / {{ quizResult.total }} 题
+              答对 {{ quizResult?.correct }} / {{ quizResult?.total }} 题
+            </div>
+            <div v-if="quizResult?.correct === quizResult?.total" class="perfect-bonus">
+              完美通关！额外奖励5积分！
+            </div>
+            <div class="reward-info">
+              获得积分：+{{ (quizResult?.correct || 0) * 3 + (quizResult?.correct === quizResult?.total ? 5 : 0) }}
             </div>
           </div>
         </div>
 
         <div v-else class="empty-state">
-          <div class="empty-icon">[练习]</div>
-          <p>点击上方按钮开始练习！</p>
+          <p>正在准备题目...</p>
         </div>
       </div>
 
@@ -757,11 +933,14 @@ onMounted(async () => {
           <p>选择一个课程主题，点击按钮生成绘本！</p>
         </div>
 
-        <!-- 历史绘本 -->
+        <!-- 历史记录 -->
         <div v-if="bookList.length > 0" class="book-history">
-          <h4 class="history-title">我的绘本收藏</h4>
+          <h4 class="history-title">历史记录</h4>
           <div class="book-list">
-            <div v-for="b in bookList" :key="b.id" class="book-card">
+            <div v-for="b in bookList" :key="b.id" class="book-card" @click="viewHistoryBook(b)">
+              <button class="fav-btn" :class="{ active: b.isFavorite }" @click.stop="toggleFavorite(b)" :title="b.isFavorite ? '取消收藏' : '收藏'">
+                {{ b.isFavorite ? '\u2605' : '\u2606' }}
+              </button>
               <span class="book-card-title">{{ b.title }}</span>
               <span class="book-card-topic">{{ b.topic }}</span>
               <span class="book-card-date">{{ b.createdAt }}</span>
@@ -841,6 +1020,7 @@ onMounted(async () => {
 <style scoped>
 .ai-learning-page {
   height: 100%;
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -855,6 +1035,7 @@ onMounted(async () => {
   padding: 12px 20px;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  flex-shrink: 0;
 }
 .grade-selector { display: flex; align-items: center; gap: 8px; }
 .grade-label { font-size: 14px; color: #666; font-weight: 500; }
@@ -921,7 +1102,7 @@ onMounted(async () => {
 /* 标签栏 */
 .tab-bar {
   display: flex; gap: 4px; padding: 8px 12px;
-  background: #fafafa; border-bottom: 1px solid #eee;
+  background: #fafafa; border-bottom: 1px solid #eee; flex-shrink: 0;
 }
 .tab-btn {
   display: flex; align-items: center; gap: 6px;
@@ -964,12 +1145,14 @@ onMounted(async () => {
 .empty-icon { font-size: 32px; color: #ffb74d; font-weight: 600; }
 
 /* 对话 */
-.chat-tab { display: flex; flex-direction: column; height: 100%; }
+.tab-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.chat-tab { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 
 /* 聊天管理工具栏 */
 .chat-toolbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 8px 16px; background: #fff8e1; border-bottom: 1px solid #ffe0b2;
+  flex-shrink: 0;
 }
 .chat-toolbar-info { font-size: 13px; color: #e65100; font-weight: 500; }
 .chat-toolbar-actions { display: flex; gap: 8px; }
@@ -992,8 +1175,9 @@ onMounted(async () => {
   width: 40px; height: 40px; border-radius: 50%; object-fit: cover;
   flex-shrink: 0; border: 2px solid #ffb74d;
 }
-.chat-bubble-wrap { position: relative; max-width: 70%; }
+.chat-bubble-wrap { position: relative; max-width: 85%; }
 .bubble-footer { display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px; }
+.msg-ai .bubble-footer { justify-content: flex-start; }
 .msg-action-btn {
   padding: 2px 10px; border: 1px solid #ddd; background: white;
   color: #999; border-radius: 10px; font-size: 11px; cursor: pointer;
@@ -1034,13 +1218,13 @@ onMounted(async () => {
   0%, 60%, 100% { transform: translateY(0); }
   30% { transform: translateY(-8px); }
 }
-.quick-questions { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-top: 1px solid #eee; }
+.quick-questions { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-top: 1px solid #eee; flex-shrink: 0; }
 .quick-q-btn {
   padding: 6px 14px; background: #f5f5f5; border: none; border-radius: 16px;
   font-size: 12px; color: #666; cursor: pointer; transition: all 0.2s;
 }
 .quick-q-btn:hover { background: #ffb74d; color: white; }
-.chat-input-area { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #eee; background: white; }
+.chat-input-area { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #eee; background: white; flex-shrink: 0; }
 .chat-input-area input {
   flex: 1; padding: 10px 16px; border: 2px solid #e0e0e0;
   border-radius: 20px; font-size: 14px; outline: none; transition: border-color 0.2s;
@@ -1055,6 +1239,16 @@ onMounted(async () => {
 
 /* 学习资料 */
 .materials-tab { padding: 20px; overflow-y: auto; }
+.materials-sub-tabs {
+  display: flex; gap: 8px; justify-content: center; margin-bottom: 16px;
+  border-bottom: 2px solid #eee; padding-bottom: 8px;
+}
+.sub-tab-btn {
+  padding: 6px 20px; border: none; background: none; cursor: pointer;
+  font-size: 14px; color: #888; border-radius: 20px; transition: all 0.2s;
+}
+.sub-tab-btn:hover { color: #ff9800; background: #fff3e0; }
+.sub-tab-btn.active { color: #fff; background: #ff9800; font-weight: 600; }
 .materials-header { text-align: center; margin-bottom: 20px; }
 .materials-header h3 { font-size: 20px; color: #333; margin-bottom: 8px; }
 .materials-hint { font-size: 13px; color: #888; margin-bottom: 12px; }
@@ -1073,12 +1267,16 @@ onMounted(async () => {
 .material-info { flex: 1; min-width: 0; }
 .material-title { font-size: 15px; font-weight: 600; color: #333; margin-bottom: 4px; }
 .material-desc { font-size: 13px; color: #888; line-height: 1.4; }
+.material-teacher { font-size: 11px; color: #aaa; margin-top: 4px; }
 .material-go { font-size: 13px; color: #ffb74d; font-weight: 500; flex-shrink: 0; }
 
 /* 练习 */
 .quiz-tab { padding: 20px; overflow-y: auto; }
 .quiz-header { text-align: center; margin-bottom: 20px; }
 .quiz-header h3 { font-size: 20px; color: #333; margin-bottom: 8px; }
+.quiz-btns { display: flex; gap: 10px; justify-content: center; }
+.quiz-reset-btn { background: #fff !important; color: #888 !important; border: 1px solid #ddd !important; }
+.quiz-reset-btn:hover { border-color: #bbb !important; color: #555 !important; }
 .quiz-hint { font-size: 13px; color: #888; margin-bottom: 12px; }
 .quiz-list { display: flex; flex-direction: column; gap: 16px; max-width: 700px; margin: 0 auto; }
 .quiz-item {
@@ -1124,6 +1322,102 @@ onMounted(async () => {
 .score-num { font-size: 36px; font-weight: bold; color: #ff9800; }
 .score-unit { font-size: 16px; color: #ff9800; }
 .result-detail { font-size: 14px; color: #666; margin-top: 4px; }
+
+/* 闯关地图 */
+.quiz-game { display: flex; flex-direction: column; gap: 20px; max-width: 700px; margin: 0 auto; }
+.quiz-map {
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px 12px; background: linear-gradient(135deg, #fff8e1, #fff3e0);
+  border-radius: 16px; gap: 0;
+}
+.map-node {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  flex-shrink: 0; position: relative; transition: all 0.3s;
+}
+.node-icon {
+  width: 48px; height: 48px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: bold; transition: all 0.3s;
+  background: #e0e0e0; color: #999; border: 3px solid #bdbdbd;
+}
+.map-node.current .node-icon {
+  background: #ffb74d; color: white; border-color: #ff9800;
+  box-shadow: 0 0 12px rgba(255, 152, 0, 0.5); animation: nodePulse 1.5s ease-in-out infinite;
+}
+.map-node.completed .node-icon { background: #4caf50; color: white; border-color: #388e3c; }
+.map-node.failed .node-icon { background: #f44336; color: white; border-color: #c62828; }
+.map-node.locked .node-icon { background: #eee; color: #ccc; border-color: #ddd; }
+.map-node.treasure .node-icon {
+  width: 56px; height: 56px; font-size: 14px;
+  background: linear-gradient(135deg, #ffd700, #ffa500); color: #fff;
+  border-color: #ff9800;
+}
+.map-node.treasure.reached .node-icon {
+  animation: treasureBounce 0.6s ease-in-out; background: linear-gradient(135deg, #ffd700, #ff6f00);
+}
+.node-label { font-size: 11px; color: #888; }
+.map-node.current .node-label { color: #ff9800; font-weight: 600; }
+.map-node.completed .node-label { color: #4caf50; font-weight: 600; }
+.map-connector {
+  width: 32px; height: 4px; background: #e0e0e0; border-radius: 2px;
+  transition: background 0.3s; flex-shrink: 0;
+}
+.map-connector.active { background: #4caf50; }
+.node-check, .node-cross { font-size: 14px; }
+.node-current { font-size: 18px; }
+
+@keyframes nodePulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+@keyframes treasureBounce {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  25% { transform: scale(1.2) rotate(-5deg); }
+  75% { transform: scale(1.2) rotate(5deg); }
+}
+
+.quiz-current {
+  background: #fafafa; border-radius: 12px; padding: 20px;
+  border: 2px solid #ffe0b2;
+}
+.quiz-feedback {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; border-radius: 10px; margin-top: 12px;
+  animation: feedbackSlide 0.3s ease-out;
+}
+.quiz-feedback.correct { background: #e8f5e9; }
+.quiz-feedback.correct .feedback-icon {
+  color: #4caf50; font-size: 20px; font-weight: bold;
+}
+.quiz-feedback.wrong { background: #ffebee; }
+.quiz-feedback.wrong .feedback-icon {
+  color: #f44336; font-size: 20px; font-weight: bold;
+}
+.feedback-text { font-size: 14px; color: #333; }
+@keyframes feedbackSlide { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* 闯关结果 */
+.quiz-victory {
+  text-align: center; padding: 30px 20px; max-width: 500px; margin: 0 auto;
+}
+.treasure-open { margin-bottom: 20px; }
+.treasure-emoji {
+  width: 80px; height: 80px; margin: 0 auto 8px;
+  background: linear-gradient(135deg, #ffd700, #ff6f00);
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: bold; color: white;
+  animation: treasureBounce 0.8s ease-in-out;
+}
+.treasure-text { font-size: 16px; color: #ff9800; font-weight: 600; }
+.perfect-bonus {
+  margin-top: 8px; padding: 6px 14px; display: inline-block;
+  background: linear-gradient(135deg, #ffd700, #ffa500); color: white;
+  border-radius: 20px; font-size: 13px; font-weight: 600;
+}
+.reward-info {
+  margin-top: 8px; font-size: 15px; color: #4caf50; font-weight: 600;
+}
+
+/* 过渡动画 */
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
 
 /* 动画 */
 .animation-tab { padding: 20px; overflow-y: auto; }
@@ -1178,11 +1472,21 @@ onMounted(async () => {
 .history-title { font-size: 16px; color: #333; margin-bottom: 12px; }
 .book-list { display: flex; flex-wrap: wrap; gap: 10px; }
 .book-card {
+  position: relative; cursor: pointer; transition: all 0.2s;
   display: flex; flex-direction: column; gap: 4px;
   padding: 10px 14px; background: #f5f5f5; border-radius: 10px;
   min-width: 150px;
 }
-.book-card-title { font-size: 14px; font-weight: 600; color: #333; }
+.book-card:hover { background: #e8eaf6; transform: translateY(-2px); }
+.fav-btn {
+  position: absolute; top: 4px; right: 4px;
+  background: none; border: none; cursor: pointer;
+  font-size: 18px; color: #ccc; padding: 2px; line-height: 1;
+  transition: all 0.2s;
+}
+.fav-btn:hover { color: #ffc107; transform: scale(1.2); }
+.fav-btn.active { color: #ffc107; }
+.book-card-title { font-size: 14px; font-weight: 600; color: #333; padding-right: 20px; }
 .book-card-topic { font-size: 12px; color: #888; }
 .book-card-date { font-size: 11px; color: #bbb; }
 

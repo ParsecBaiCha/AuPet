@@ -27,5 +27,8 @@ backend/config_local.py
 Thumbs.db
 desktop.ini
 
+# ===== Local workspace metadata =====
+.workbuddy/
+
 # ===== 日志 =====
 *.log

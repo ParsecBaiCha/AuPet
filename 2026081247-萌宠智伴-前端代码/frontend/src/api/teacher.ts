@@ -28,4 +28,8 @@ export const teacherApi = {
   createForumPost: (data: any) => api.post('/teacher/forum', data),
   getMyPosts: () => silentGet('/teacher/forum/mine'),
   getForumBoards: () => silentGet('/teacher/forum/boards'),
+  getMaterials: () => silentGet('/teacher/materials'),
+  uploadMaterial: (data: { title: string; url: string; description?: string; type?: string; courseId?: number }) =>
+    api.post('/teacher/materials', data),
+  deleteMaterial: (id: number) => api.delete(`/teacher/materials/${id}`),
 }

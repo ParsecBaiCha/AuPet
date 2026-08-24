@@ -262,7 +262,9 @@ function handleLogout() {
 .top-pet-img { width: 24px; height: 24px; object-fit: contain; }
 .top-pet-name { font-size: 13px; color: #f48d45; font-weight: 500; }
 .main-content {
-  min-height: calc(100vh - var(--header-height));
+  height: calc(100vh - var(--header-height));
   padding: 16px; background: #FFF8DC;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 </style>
