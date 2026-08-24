@@ -26,6 +26,8 @@ export const useUserStore = defineStore('user', () => {
   const userPoints = ref(0)
   const completedTasks = ref(0)
   const rank = ref(0)
+  const educationStage = ref<'primary' | 'senior'>('primary')
+  const grade = ref('')
 
   function spendPoints(amount: number): boolean {
     if (userPoints.value >= amount) {
@@ -58,6 +60,8 @@ export const useUserStore = defineStore('user', () => {
     if (data.points !== undefined) userPoints.value = data.points
     if (data.rank !== undefined) rank.value = data.rank
     if (data.completedTasks !== undefined) completedTasks.value = data.completedTasks
+    if (data.educationStage === 'senior' || data.educationStage === 'primary') educationStage.value = data.educationStage
+    if (data.grade !== undefined) grade.value = data.grade
   }
 
   // 从 /student/mypet 响应填充宠物档案与学生信息（字段名适配映射）
@@ -83,7 +87,7 @@ export const useUserStore = defineStore('user', () => {
   }
 
   return {
-    studentInfo, petInfo, petExp, petMaxExp, userPoints, completedTasks, rank,
+    studentInfo, petInfo, petExp, petMaxExp, userPoints, completedTasks, rank, educationStage, grade,
     spendPoints, addExp, updateStudentInfo, updatePetInfo, applyDashboard, applyMyPet,
   }
 })

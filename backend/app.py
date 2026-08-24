@@ -7,6 +7,7 @@ import hashlib
 import json
 import random
 import datetime
+import re
 from functools import wraps
 
 from flask import Flask, request, jsonify
@@ -78,6 +79,19 @@ def now_str():
     return datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 
+def education_stage(grade):
+    """Map a class grade to the two student experiences used by the UI."""
+    value = str(grade or '').strip()
+    if value.startswith(('初', '高')):
+        return 'senior'
+    match = re.search(r'\d+', value)
+    if match and 7 <= int(match.group()) <= 12:
+        return 'senior'
+    if value.startswith(('七', '八', '九')):
+        return 'senior'
+    return 'primary'
+
+
 # ============ 简易 token 校验 ============
 def get_login_user():
     auth = request.headers.get('Authorization', '')
@@ -143,7 +157,8 @@ def auth_login():
 
     # ---- 学生登录(学号,MD5 密码) ----
     student = query(
-        'SELECT * FROM students WHERE student_no=%s', (username,), one=True)
+        'SELECT s.*, c.grade class_grade FROM students s '
+        'LEFT JOIN classes c ON c.id=s.class_id WHERE s.student_no=%s', (username,), one=True)
     if student:
         if md5(password) == student['password']:
             token = f"{student['student_no']}_student_{student['id']}"
@@ -151,7 +166,9 @@ def auth_login():
                 'token': token,
                 'user': {'id': student['id'], 'username': student['student_no'],
                          'role': 'student', 'name': student['name'],
-                         'avatar': student.get('avatar') or ''}
+                         'avatar': student.get('avatar') or '',
+                         'grade': student.get('class_grade') or '',
+                         'educationStage': education_stage(student.get('class_grade'))}
             })
         return jsonify({'message': '密码错误'}), 400
 
@@ -194,7 +211,7 @@ def auth_me():
 @login_required
 def student_dashboard():
     sid = request.login_user['id']
-    s = query('SELECT s.*, c.name class_name FROM students s '
+    s = query('SELECT s.*, c.name class_name, c.grade class_grade FROM students s '
               'LEFT JOIN classes c ON s.class_id=c.id WHERE s.id=%s', (sid,), one=True)
     sp = query('SELECT sp.*, p.image_url pet_img, p.type pet_type FROM student_pets sp '
                'LEFT JOIN pets p ON sp.pet_id=p.id WHERE sp.student_id=%s AND sp.is_active=1',
@@ -210,6 +227,8 @@ def student_dashboard():
     return jsonify({
         'studentName': s['name'], 'avatar': s.get('avatar') or '/images/avatars/dz.jpg',
         'className': s.get('class_name') or '未分班',
+        'grade': s.get('class_grade') or '',
+        'educationStage': education_stage(s.get('class_grade')),
         'petName': sp['pet_name'] if sp else '球球',
         'petImage': sp['pet_img'] if sp else '/images/pets/dog1.jpg',
         'points': s['points'], 'rank': rank['r'] if rank else 1,

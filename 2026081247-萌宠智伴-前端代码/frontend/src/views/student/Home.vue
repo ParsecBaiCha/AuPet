@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useUserStore } from '../../stores/user'
 import { studentApi } from '../../api/student'
+import SeniorHome from './SeniorHome.vue'
 
 const userStore = useUserStore()
 
@@ -11,6 +12,7 @@ interface ClassPet {
 }
 
 const classPets = ref<ClassPet[]>([])
+const isSenior = computed(() => userStore.educationStage === 'senior')
 
 const getLevelColor = (level: string) => {
   const colors: Record<string, string> = { 'S': '#f4bb6e', 'A': '#f48d45', 'B': '#8985cf', 'C': '#4caf50' }
@@ -34,7 +36,8 @@ onMounted(async () => {
 </script>
 
 <template>
-<div class="class-home">
+<SeniorHome v-if="isSenior" :class-pets="classPets" />
+<div v-else class="class-home">
   <!-- Dashboard header with user info -->
   <div class="dashboard">
     <div class="dashboard-left">

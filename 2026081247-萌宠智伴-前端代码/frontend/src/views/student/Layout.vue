@@ -1,5 +1,5 @@
 <template>
-  <div class="app-container">
+  <div class="app-container" :class="{ 'senior-shell': isSenior }">
     <div v-if="showTimeWarning" class="time-warning-dialog" @click.self="closeWarning">
       <div class="dialog-content">
         <h3>温馨提醒</h3>
@@ -20,7 +20,7 @@
       <div class="sidebar-header">
         <img class="logo-icon" src="/images/Student_Icons/SystemIcons.png" alt="logo" />
         <div class="logo-text">
-          <h1>学生端</h1>
+          <h1>{{ isSenior ? '成长空间' : '学生端' }}</h1>
         </div>
       </div>
 
@@ -83,19 +83,20 @@ const route = useRoute()
 const store = useAppStore()
 const userStore = useUserStore()
 
-const navItems = [
-  { path: '/student', label: '班级首页', icon: '/images/Student_Navigation_Bar/首页.svg' },
-  { path: '/student/ai-learning', label: 'AI通识课', icon: '/images/Student_Navigation_Bar/聊天.svg' },
-  { path: '/student/my-pet', label: '我的宠物', icon: '/images/Student_Navigation_Bar/携带宠物.svg' },
-  { path: '/student/ai-companion', label: '智能情感交流', icon: '/images/Student_Navigation_Bar/聊天.svg' },
-  { path: '/student/growth-diary', label: '成长日记', icon: '/images/Student_Navigation_Bar/日记.svg' },
-  { path: '/student/tasks', label: '当日任务', icon: '/images/Student_Navigation_Bar/任务.svg' },
+const isSenior = computed(() => userStore.educationStage === 'senior')
+const navItems = computed(() => [
+  { path: '/student', label: isSenior.value ? '学习概览' : '班级首页', icon: '/images/Student_Navigation_Bar/首页.svg' },
+  { path: '/student/ai-learning', label: isSenior.value ? 'AI 研习' : 'AI通识课', icon: '/images/Student_Navigation_Bar/聊天.svg' },
+  { path: '/student/my-pet', label: isSenior.value ? '伙伴档案' : '我的宠物', icon: '/images/Student_Navigation_Bar/携带宠物.svg' },
+  { path: '/student/ai-companion', label: isSenior.value ? '心情对话' : '智能情感交流', icon: '/images/Student_Navigation_Bar/聊天.svg' },
+  { path: '/student/growth-diary', label: isSenior.value ? '成长记录' : '成长日记', icon: '/images/Student_Navigation_Bar/日记.svg' },
+  { path: '/student/tasks', label: isSenior.value ? '学习计划' : '当日任务', icon: '/images/Student_Navigation_Bar/任务.svg' },
   { path: '/student/settings', label: '设置', icon: '/images/Student_Navigation_Bar/设置.svg' },
-]
+])
 
 const currentTitle = computed(() => {
-  const item = navItems.find(n => n.path === route.path)
-  return item?.label || '班级首页'
+  const item = navItems.value.find(n => n.path === route.path)
+  return item?.label || (isSenior.value ? '学习概览' : '班级首页')
 })
 
 const dailyTimeLimit = ref(3 * 60 * 60)
@@ -267,4 +268,25 @@ function handleLogout() {
   overflow-y: auto;
   overflow-x: hidden;
 }
+.senior-shell { background: #fff9f0; }
+.senior-shell .sidebar { background: linear-gradient(180deg, #faf3e8 0%, #f5ede0 100%); border-right: 1px solid rgba(244,187,110,0.2); }
+.senior-shell .main-content { background: #fff9f0; }
+.senior-shell .top-header-bar { background: #fff; border-bottom: 1px solid rgba(244,187,110,0.12); }
+.senior-shell .current-page { color: #5a4a6a; }
+.senior-shell .top-pet { background: #fff5e6; border: 1px solid rgba(244,187,110,0.2); }
+.senior-shell .top-pet-name { color: #c97d3a; }
+.senior-shell .timer-bar { background: linear-gradient(135deg, #ffb74d 0%, #ff9800 100%); border: 1px solid rgba(255,183,77,0.35); }
+.senior-shell .nav-item { color: #6b5b4e; }
+.senior-shell .nav-item:hover { background: rgba(137,133,207,0.1); color: #8985cf; }
+.senior-shell .nav-item.active { background: rgba(137,133,207,0.12); border-left: 3px solid #8985cf; color: #8985cf; }
+.senior-shell .nav-item.active .nav-icon { filter: none; }
+.senior-shell .sidebar-header { border-bottom: 1px solid rgba(244,187,110,0.15); }
+.senior-shell .sidebar-footer { border-top: 1px solid rgba(244,187,110,0.15); }
+.senior-shell .logo-text h1 { color: #8985cf; letter-spacing: 1px; }
+.senior-shell .user-name { color: #5a4a6a; }
+.senior-shell .user-status { color: #b3a89a; }
+.senior-shell .top-name { color: #5a4a6a; }
+.senior-shell .top-class { color: #b3a89a; }
+.senior-shell .logout-btn { background: rgba(137,133,207,0.1); border: 1px solid rgba(137,133,207,0.2); color: #8985cf; }
+.senior-shell .logout-btn:hover { background: rgba(137,133,207,0.18); }
 </style>
