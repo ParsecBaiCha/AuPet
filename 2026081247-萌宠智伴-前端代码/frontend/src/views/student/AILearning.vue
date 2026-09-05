@@ -42,10 +42,55 @@ const courseCategories = computed(() => {
 })
 
 const selectCourse = (c: any) => {
+  const changed = selectedCourse.value?.id !== c.id
   selectedCourse.value = c
   selectedTopic.value = c.title
   loadSuggestedQuestions(c.id, c.title)
   if (activeTab.value === 'materials') loadMaterials()
+  if (activeTab.value === 'quiz') {
+    quizStage.value = 'idle'
+    quizGroup.value = 0
+    generateQuiz()
+  }
+  if (activeTab.value === 'book') {
+    bookData.value = null
+    generateBook()
+  }
+  // 切换到不同课程时，AI主动围绕该课程给出学习引导
+  if (changed) loadCourseGuide(c)
+}
+
+// 切换课程时，AI主动给出该课程的学习引导语
+const guideLoading = ref(false)
+const loadCourseGuide = async (c: any) => {
+  if (guideLoading.value || !c?.id) return
+  guideLoading.value = true
+  try {
+    const data: any = await studentApi.getCourseGuide(c.id, c.title)
+    if (data?.reply) {
+      chatMessages.value.push({
+        id: Date.now() + 1,
+        type: 'assistant',
+        content: data.reply,
+        time: data?.time ?? nowTime(),
+      })
+      scrollChat()
+    }
+  } catch (e) { /* 引导生成失败不影响使用 */ } finally {
+    guideLoading.value = false
+  }
+}
+
+// 进入测验/绘本/动画前确保已选课程，未选则自动选择第一门课并提示
+const ensureCourseSelected = (): boolean => {
+  if (selectedCourse.value) return true
+  if (courses.value.length > 0) {
+    selectCourse(courses.value[0])
+    ElMessage.info(`已为您自动选择课程：${courses.value[0].title}`)
+    return true
+  }
+  ElMessage.warning('请先在左侧选择一个课程')
+  return false
 }
 
 // ===== 标签页 =====
@@ -92,7 +137,7 @@ const sendChat = async () => {
   scrollChat()
   chatSending.value = true
   try {
-    const data: any = await studentApi.sendAIChat(text)
+    const data: any = await studentApi.sendAIChat(text, selectedCourse.value?.id, selectedTopic.value || undefined)
     // 用数据库真实ID替换临时ID
     const userIdx = chatMessages.value.findIndex(m => m.id === tempUserId)
     if (userIdx >= 0 && data?.userMsgId) {
@@ -224,9 +269,11 @@ const quizCurrentIdx = ref(0)
 const quizCorrectCount = ref(0)
 const quizAnsweredFlags = ref<boolean[]>([])
 const quizFeedback = ref<'none' | 'correct' | 'wrong'>('none')
+const quizGroup = ref(0) // 预生成题库组号，实现"换一组题"立即切换
 
 const generateQuiz = async () => {
   const topic = selectedTopic.value || '人工智能基础'
+  const group = quizGroup.value
   quizLoading.value = true
   quizResult.value = null
   quizStage.value = 'idle'
@@ -234,10 +281,13 @@ const generateQuiz = async () => {
   quizCorrectCount.value = 0
   quizFeedback.value = 'none'
   try {
-    const data: any = await studentApi.generateQuiz({ topic, count: 3, courseId: selectedCourse.value?.id })
+    const data: any = await studentApi.generateQuiz({ topic, count: 3, courseId: selectedCourse.value?.id, group })
     quizQuestions.value = data?.questions || []
     quizAnswers.value = new Array(quizQuestions.value.length).fill(-1)
     quizAnsweredFlags.value = new Array(quizQuestions.value.length).fill(false)
+    // 有预生成多组题库时，自动预取下一组，点"换一组题"即刻切换
+    const total = data?.totalGroups || 1
+    quizGroup.value = total > 1 ? (group + 1) % total : 0
     if (quizQuestions.value.length > 0) {
       quizStage.value = 'playing'
     } else {
@@ -303,31 +353,37 @@ const resetQuiz = () => {
   quizCorrectCount.value = 0
   quizFeedback.value = 'none'
   quizAnsweredFlags.value = []
+  quizGroup.value = 0
 }
 
-// ===== 动画讲解 =====
-const animationData = ref<any>(null)
-const animLoading = ref(false)
-
-const generateAnimation = async () => {
-  const topic = selectedTopic.value || '冒泡排序'
-  animLoading.value = true
-  animationData.value = null
-  try {
-    const data: any = await studentApi.generateAnimation({ topic, courseId: selectedCourse.value?.id })
-    animationData.value = data
-  } catch (e) {
-    ElMessage.error('动画生成失败，请稍后重试')
-  } finally {
-    animLoading.value = false
-  }
+// ===== 动画讲解（内置视频） =====
+// 各课程内置B站视频，替代AI生成动画
+const builtinVideos: Record<string, { bvid: string; title: string }> = {
+  '什么是人工智能': { bvid: 'BV1wNL9zCEfy', title: '什么是人工智能' },
+  '计算机是怎么思考的': { bvid: 'BV13r95BFEXU', title: '计算机是怎么思考的' },
+  '和AI做朋友': { bvid: 'BV1hG411A7E4', title: '和AI做朋友' },
+  '简单的指令': { bvid: 'BV12L4y1775u', title: '简单的指令' },
+  '机器学习是什么': { bvid: 'BV1nt411r7tj', title: '机器学习是什么' },
+  'Scratch编程入门': { bvid: 'BV17F411b7UQ', title: 'Scratch编程入门' },
+  '排序算法': { bvid: 'BV1WP411c7hS', title: '排序算法' },
+  'AI能做什么和不能做什么': { bvid: 'BV1FrX7YWEuZ', title: 'AI能做什么和不能做什么' },
+  '条件判断': { bvid: 'BV1j5fbYAECo', title: '条件判断' },
+  '循环结构': { bvid: 'BV1fofhY3EjB', title: '循环结构' },
 }
+const builtinVideo = computed(() => {
+  const t = selectedCourse.value?.title
+  if (!t) return null
+  return builtinVideos[t] || null
+})
 
 // ===== 绘本生成 =====
 const bookData = ref<any>(null)
-const bookList = ref<any[]>([])
+const favBooks = ref<any[]>([])
 const bookLoading = ref(false)
 const bookPage = ref(0)
+// 当前播放绘本对应的记录（用于收藏）
+const bookRecordId = ref(0)
+const bookFav = ref(false)
 
 const generateBook = async () => {
   const topic = selectedTopic.value || '什么是人工智能'
@@ -337,18 +393,20 @@ const generateBook = async () => {
   try {
     const data: any = await studentApi.generateBook({ topic, courseId: selectedCourse.value?.id })
     bookData.value = data
-    loadBookList()
+    bookRecordId.value = data?.recordId || 0
+    bookFav.value = !!data?.isFavorite
+    loadFavoriteList()
   } catch (e) {
-    ElMessage.error('绘本生成失败，请稍后重试')
+    ElMessage.error('绘本加载失败，请稍后重试')
   } finally {
     bookLoading.value = false
   }
 }
 
-const loadBookList = async () => {
+const loadFavoriteList = async () => {
   try {
-    const data: any = await studentApi.getBooks()
-    bookList.value = Array.isArray(data) ? data : []
+    const data: any = await studentApi.getFavoriteBooks()
+    favBooks.value = Array.isArray(data) ? data : []
   } catch (e) { /* ignore */ }
 }
 
@@ -361,7 +419,7 @@ const prevBookPage = () => {
   if (bookPage.value > 0) bookPage.value--
 }
 
-const viewHistoryBook = async (b: any) => {
+const viewFavoriteBook = async (b: any) => {
   try {
     const data: any = await studentApi.getBook(b.id)
     bookData.value = {
@@ -370,16 +428,21 @@ const viewHistoryBook = async (b: any) => {
     }
     bookPage.value = 0
     bookLoading.value = false
+    bookRecordId.value = b.id
+    bookFav.value = !!b.isFavorite
   } catch (e) {
     ElMessage.error('加载绘本失败')
   }
 }
 
-const toggleFavorite = async (b: any) => {
+// 收藏/取消收藏当前播放的绘本
+const toggleCurrentFav = async () => {
+  if (!bookRecordId.value) return
   try {
-    const data: any = await studentApi.toggleBookFavorite(b.id)
-    b.isFavorite = data.isFavorite
-    ElMessage.success(data.isFavorite ? '已收藏' : '已取消收藏')
+    const data: any = await studentApi.toggleBookFavorite(bookRecordId.value)
+    bookFav.value = !!data?.isFavorite
+    ElMessage.success(bookFav.value ? '已收藏' : '已取消收藏')
+    loadFavoriteList()
   } catch (e) {
     ElMessage.error('操作失败')
   }
@@ -444,12 +507,20 @@ const loadLearningPath = async () => {
 // ===== 切换标签时加载数据 =====
 watch(activeTab, (tab) => {
   if (tab === 'path' && !learningPath.value) loadLearningPath()
-  if (tab === 'book' && bookList.value.length === 0) loadBookList()
+  if (tab === 'book') {
+    loadFavoriteList()
+    // 课程已有预生成绘本时，进入即直接播放，无需点击生成
+    if (!bookData.value) {
+      if (ensureCourseSelected()) generateBook()
+    }
+  }
   if (tab === 'materials') {
     if (materialsSubTab.value === 'recommended') loadMaterials()
     else loadTeacherMaterials()
   }
-  if (tab === 'quiz' && quizStage.value === 'idle') generateQuiz()
+  if (tab === 'quiz' && quizStage.value === 'idle') {
+    if (ensureCourseSelected()) generateQuiz()
+  }
   })
 
 // ===== 加载数据 =====
@@ -571,7 +642,9 @@ onMounted(async () => {
                class="course-item"
                :class="{ active: selectedCourse?.id === c.id }"
                @click="selectCourse(c)">
-            <div class="course-title">{{ c.title }}</div>
+            <div class="course-title">
+              {{ c.title }}
+            </div>
             <div class="course-desc">{{ c.description }}</div>
             <span class="difficulty-badge" :class="c.difficulty">
               {{ c.difficulty === 'easy' ? '入门' : c.difficulty === 'medium' ? '进阶' : '挑战' }}
@@ -769,7 +842,7 @@ onMounted(async () => {
 
         <div v-if="quizLoading" class="loading-state">
           <div class="loading-spinner"></div>
-          <p>AI正在为你出题...</p>
+          <p>正在准备题目...</p>
         </div>
 
         <!-- 闯关地图 -->
@@ -867,85 +940,78 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- 动画讲解 -->
+      <!-- 动画讲解（内置视频） -->
       <div v-if="activeTab === 'animation'" class="tab-content animation-tab">
-        <div class="anim-header">
-          <h3>动画讲解</h3>
-          <p class="anim-hint">AI会生成动画来直观讲解抽象概念</p>
-          <button @click="generateAnimation" :disabled="animLoading" class="action-btn">
-            {{ animLoading ? '生成中...' : (animationData ? '重新生成' : '生成动画') }}
-          </button>
-        </div>
-
-        <div v-if="animLoading" class="loading-state">
-          <div class="loading-spinner"></div>
-          <p>AI正在创作动画...</p>
-        </div>
-
-        <div v-else-if="animationData" class="anim-result">
-          <h4 class="anim-title">{{ animationData.title }}</h4>
-          <p class="anim-desc">{{ animationData.description }}</p>
-          <div class="anim-svg-container" v-html="animationData.svg"></div>
-          <div class="anim-explanation">
-            <span class="expl-label">详细解释：</span>
-            <p>{{ animationData.explanation }}</p>
+        <div v-if="builtinVideo" class="anim-result anim-result--video">
+          <h4 class="anim-title">{{ builtinVideo.title }}</h4>
+          <div class="video-embed-container">
+            <iframe
+              :src="`https://player.bilibili.com/player.html?bvid=${builtinVideo.bvid}&autoplay=0&high_quality=1&danmaku=0`"
+              scrolling="no" border="0" frameborder="no" framespacing="0"
+              allowfullscreen="true"
+            ></iframe>
           </div>
         </div>
 
         <div v-else class="empty-state">
-          <div class="empty-icon">[动画]</div>
-          <p>选择一个课程主题，点击按钮生成动画讲解！</p>
+          <div class="empty-icon">[视频]</div>
+          <p>该课程暂未配置视频，敬请期待！</p>
         </div>
       </div>
 
       <!-- 绘本生成 -->
       <div v-if="activeTab === 'book'" class="tab-content book-tab">
-        <div class="book-header">
-          <h3>绘本生成</h3>
-          <p class="book-hint">AI会创作互动绘本，用故事和图画讲解知识</p>
-          <button @click="generateBook" :disabled="bookLoading" class="action-btn">
-            {{ bookLoading ? '生成中...' : (bookData ? '重新生成' : '生成绘本') }}
-          </button>
-        </div>
-
-        <div v-if="bookLoading" class="loading-state">
-          <div class="loading-spinner"></div>
-          <p>AI正在创作绘本...</p>
-        </div>
-
-        <div v-else-if="bookData" class="book-result">
-          <h4 class="book-title">{{ bookData.title }}</h4>
-          <div class="book-page-display">
-            <div class="book-page" v-if="bookData.pages[bookPage]">
-              <div class="book-svg" v-html="bookData.pages[bookPage].svg"></div>
-              <p class="book-text">{{ bookData.pages[bookPage].text }}</p>
+        <div class="book-layout">
+          <!-- 主播放区 -->
+          <div class="book-main">
+            <div v-if="bookLoading" class="loading-state">
+              <div class="loading-spinner"></div>
+              <p>正在加载绘本...</p>
             </div>
-            <div class="book-nav">
-              <button @click="prevBookPage" :disabled="bookPage === 0" class="nav-btn">上一页</button>
-              <span class="page-info">{{ bookPage + 1 }} / {{ bookData.pages.length }}</span>
-              <button @click="nextBookPage" :disabled="bookPage >= bookData.pages.length - 1" class="nav-btn">下一页</button>
-            </div>
-          </div>
-        </div>
 
-        <div v-else class="empty-state">
-          <div class="empty-icon">[绘本]</div>
-          <p>选择一个课程主题，点击按钮生成绘本！</p>
-        </div>
+            <template v-else-if="bookData">
+              <div class="book-result">
+                <div class="book-head-row">
+                  <h4 class="book-title">{{ bookData.title }}</h4>
+                  <button class="book-fav-main" :class="{ active: bookFav }" @click="toggleCurrentFav"
+                          :title="bookFav ? '取消收藏' : '收藏'" :disabled="!bookRecordId">
+                    {{ bookFav ? '\u2605 已收藏' : '\u2606 收藏' }}
+                  </button>
+                </div>
+                <div class="book-page-display">
+                  <div class="book-page" v-if="bookData.pages[bookPage]">
+                    <div class="book-svg" v-html="bookData.pages[bookPage].svg"></div>
+                    <p class="book-text">{{ bookData.pages[bookPage].text }}</p>
+                  </div>
+                  <div class="book-nav">
+                    <button @click="prevBookPage" :disabled="bookPage === 0" class="nav-btn">上一页</button>
+                    <span class="page-info">{{ bookPage + 1 }} / {{ bookData.pages.length }}</span>
+                    <button @click="nextBookPage" :disabled="bookPage >= bookData.pages.length - 1" class="nav-btn">下一页</button>
+                  </div>
+                </div>
+              </div>
+            </template>
 
-        <!-- 历史记录 -->
-        <div v-if="bookList.length > 0" class="book-history">
-          <h4 class="history-title">历史记录</h4>
-          <div class="book-list">
-            <div v-for="b in bookList" :key="b.id" class="book-card" @click="viewHistoryBook(b)">
-              <button class="fav-btn" :class="{ active: b.isFavorite }" @click.stop="toggleFavorite(b)" :title="b.isFavorite ? '取消收藏' : '收藏'">
-                {{ b.isFavorite ? '\u2605' : '\u2606' }}
-              </button>
-              <span class="book-card-title">{{ b.title }}</span>
-              <span class="book-card-topic">{{ b.topic }}</span>
-              <span class="book-card-date">{{ b.createdAt }}</span>
+            <div v-else class="empty-state">
+              <div class="empty-icon">[绘本]</div>
+              <p>选择一个课程主题，绘本将自动播放！</p>
             </div>
           </div>
+
+          <!-- 收藏侧边栏 -->
+          <aside class="book-fav-panel">
+            <h4 class="fav-panel-title">我的收藏</h4>
+            <div v-if="favBooks.length > 0" class="fav-book-list">
+              <div v-for="b in favBooks" :key="b.id" class="fav-book-item" @click="viewFavoriteBook(b)">
+                <span class="fav-book-star">&#9733;</span>
+                <div class="fav-book-info">
+                  <span class="fav-book-title">{{ b.title }}</span>
+                  <span class="fav-book-topic">{{ b.topic }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="fav-panel-empty">还没有收藏的绘本<br />播放时点击收藏即可</div>
+          </aside>
         </div>
       </div>
 
@@ -1421,38 +1487,31 @@ onMounted(async () => {
 
 /* 动画 */
 .animation-tab { padding: 20px; overflow-y: auto; }
-.anim-header { text-align: center; margin-bottom: 20px; }
-.anim-header h3 { font-size: 20px; color: #333; margin-bottom: 8px; }
-.anim-hint { font-size: 13px; color: #888; margin-bottom: 12px; }
 .anim-result { max-width: 800px; margin: 0 auto; }
-.anim-title { font-size: 18px; color: #333; text-align: center; margin-bottom: 8px; }
-.anim-desc { font-size: 14px; color: #888; text-align: center; margin-bottom: 16px; }
-.anim-svg-container {
-  background: white; border: 2px solid #eee; border-radius: 12px;
-  padding: 16px; text-align: center; overflow-x: auto;
+.anim-result--video { max-width: 100%; width: 100%; margin: 0; }
+.anim-title { font-size: 18px; color: #333; text-align: center; margin-bottom: 12px; }
+.video-embed-container {
+  position: relative; width: 100%;
+  aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1); background: #000;
 }
-.anim-svg-container :deep(svg) { max-width: 100%; height: auto; }
-.anim-explanation {
-  margin-top: 16px; padding: 14px; background: #f5f5f5;
-  border-radius: 10px; font-size: 14px; color: #333; line-height: 1.6;
+.video-embed-container iframe {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none;
 }
 
 /* 绘本 */
 .book-tab { padding: 20px; overflow-y: auto; }
-.book-header { text-align: center; margin-bottom: 20px; }
-.book-header h3 { font-size: 20px; color: #333; margin-bottom: 8px; }
-.book-hint { font-size: 13px; color: #888; margin-bottom: 12px; }
-.book-result { max-width: 600px; margin: 0 auto; }
+.book-result { max-width: 680px; margin: 0 auto; }
 .book-title { font-size: 18px; color: #333; text-align: center; margin-bottom: 16px; }
 .book-page-display {
-  background: #fffde7; border-radius: 16px; padding: 24px;
+  background: #fffde7; border-radius: 16px; padding: 28px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.08);
 }
 .book-page { text-align: center; }
 .book-svg {
   display: flex; justify-content: center; margin-bottom: 16px;
 }
-.book-svg :deep(svg) { max-width: 200px; height: auto; }
+.book-svg :deep(svg) { max-width: 440px; width: 100%; height: auto; aspect-ratio: 1 / 1; }
 .book-text {
   font-size: 16px; color: #333; line-height: 1.8;
   padding: 0 20px;
@@ -1468,27 +1527,37 @@ onMounted(async () => {
 .nav-btn:hover { background: #ff9800; }
 .nav-btn:disabled { background: #ddd; cursor: not-allowed; }
 .page-info { font-size: 14px; color: #666; font-weight: 500; }
-.book-history { margin-top: 24px; }
-.history-title { font-size: 16px; color: #333; margin-bottom: 12px; }
-.book-list { display: flex; flex-wrap: wrap; gap: 10px; }
-.book-card {
-  position: relative; cursor: pointer; transition: all 0.2s;
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 10px 14px; background: #f5f5f5; border-radius: 10px;
-  min-width: 150px;
+/* 绘本左右布局 */
+.book-layout { display: flex; gap: 20px; align-items: flex-start; }
+.book-main { flex: 1; min-width: 0; }
+.book-fav-panel {
+  width: 230px; flex-shrink: 0; background: white; border-radius: 12px;
+  padding: 14px; box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+  position: sticky; top: 0; max-height: calc(100vh - 160px);
+  display: flex; flex-direction: column;
 }
-.book-card:hover { background: #e8eaf6; transform: translateY(-2px); }
-.fav-btn {
-  position: absolute; top: 4px; right: 4px;
-  background: none; border: none; cursor: pointer;
-  font-size: 18px; color: #ccc; padding: 2px; line-height: 1;
-  transition: all 0.2s;
+.fav-panel-title { font-size: 15px; font-weight: 600; color: #333; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #f0e6d2; }
+.fav-book-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: 1; }
+.fav-book-item {
+  display: flex; gap: 8px; align-items: flex-start; cursor: pointer;
+  padding: 9px 10px; background: #faf7ef; border-radius: 8px; transition: all 0.2s;
 }
-.fav-btn:hover { color: #ffc107; transform: scale(1.2); }
-.fav-btn.active { color: #ffc107; }
-.book-card-title { font-size: 14px; font-weight: 600; color: #333; padding-right: 20px; }
-.book-card-topic { font-size: 12px; color: #888; }
-.book-card-date { font-size: 11px; color: #bbb; }
+.fav-book-item:hover { background: #fff3e0; }
+.fav-book-star { color: #ffb300; font-size: 13px; line-height: 1.5; }
+.fav-book-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fav-book-title { font-size: 13px; font-weight: 500; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fav-book-topic { font-size: 11px; color: #999; }
+.fav-panel-empty { font-size: 12px; color: #bbb; text-align: center; padding: 24px 0; line-height: 1.8; }
+.book-head-row { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 16px; }
+.book-head-row .book-title { margin-bottom: 0; }
+.book-fav-main {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 16px; border: 1.5px solid #ffb300; background: white; color: #ff8f00;
+  border-radius: 16px; font-size: 13px; cursor: pointer; transition: all 0.2s; flex-shrink: 0;
+}
+.book-fav-main:hover { background: #fff8e1; }
+.book-fav-main:disabled { opacity: 0.5; cursor: not-allowed; }
+.book-fav-main.active { background: #ffb300; color: white; border-color: #ffb300; }
 
 /* 学习路径 */
 .path-tab { padding: 20px; overflow-y: auto; }

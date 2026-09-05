@@ -320,6 +320,19 @@ def student_chat_post():
     grade_level = (s['grade_level'] if s and s['grade_level'] else 'upper_primary') or 'upper_primary'
     pet_name = sp['pet_name'] if sp else '球球'
 
+    # 当前课程上下文：学生点击课程后，AI围绕该课程知识点引导学习
+    course_id = data.get('courseId') or 0
+    topic = (data.get('topic') or '').strip()
+    course_context = None
+    if course_id:
+        row = query('SELECT title, description FROM ai_courses WHERE id=%s', (course_id,), one=True)
+        if row:
+            course_context = {'title': row['title'], 'description': row['description'] or ''}
+    elif topic:
+        row = query('SELECT title, description FROM ai_courses WHERE title=%s LIMIT 1', (topic,), one=True)
+        if row:
+            course_context = {'title': row['title'], 'description': row['description'] or ''}
+
     # 获取最近聊天历史
     history_rows = query(
         'SELECT role, content FROM chat_history WHERE student_id=%s ORDER BY id DESC LIMIT 6',
@@ -332,7 +345,7 @@ def student_chat_post():
         (sid, 'user', message, grade_level))
 
     # 调用大模型
-    reply = llm_service.chat(message, grade_level, history, pet_name)
+    reply = llm_service.chat(message, grade_level, history, pet_name, course_context)
     t = datetime.datetime.now().strftime('%H:%M')
 
     # 保存AI回复
@@ -1093,8 +1106,15 @@ def admin_points_trend():
 def ai_courses_list():
     grade = request.args.get('grade', 'upper_primary')
     rows = query('SELECT * FROM ai_courses WHERE grade_level=%s ORDER BY sort_order', (grade,))
-    return jsonify([{'id': r['id'], 'title': r['title'], 'description': r['description'],
-                     'category': r['category'], 'difficulty': r['difficulty']} for r in rows])
+    result = []
+    for r in rows:
+        result.append({
+            'id': r['id'], 'title': r['title'], 'description': r['description'],
+            'category': r['category'], 'difficulty': r['difficulty'],
+            'hasQuiz': bool(r.get('quiz_content')),
+            'hasBook': bool(r.get('book_content')),
+        })
+    return jsonify(result)
 
 
 @app.route('/api/student/ai/grade', methods=['POST'])
@@ -1125,10 +1145,40 @@ def ai_quiz_generate():
     data = request.get_json(silent=True) or {}
     topic = data.get('topic', '人工智能基础')
     count = min(data.get('count', 3), 5)
+    group = int(data.get('group', 0) or 0)
+    course_id = data.get('courseId') or 0
     s = query('SELECT grade_level FROM students WHERE id=%s', (sid,), one=True)
     grade = (s['grade_level'] if s and s['grade_level'] else 'upper_primary') or 'upper_primary'
+
+    # 优先返回预生成题库（多组轮换），避免每次等待AI生成
+    if course_id:
+        row = query('SELECT quiz_content FROM ai_courses WHERE id=%s', (course_id,), one=True)
+    else:
+        # 未指定课程时，按主题标题兜底匹配课程缓存
+        row = query('SELECT quiz_content FROM ai_courses WHERE title=%s LIMIT 1', (topic,), one=True)
+    if row and row['quiz_content']:
+            try:
+                groups = json.loads(row['quiz_content'])
+                if isinstance(groups, list) and groups:
+                    if isinstance(groups[0], list):  # 多组题库
+                        idx = group % len(groups)
+                        questions = groups[idx]
+                    else:  # 单组题库
+                        questions = groups
+                    return jsonify({'questions': questions, 'topic': topic,
+                                    'fromCache': True, 'group': group, 'totalGroups': len(groups) if isinstance(groups[0], list) else 1})
+            except Exception:
+                pass
+
+    # 无缓存时实时生成，并回写缓存（保证下次直接可用）
     questions = llm_service.generate_quiz(topic, grade, count)
-    return jsonify({'questions': questions, 'topic': topic})
+    if course_id and questions and '生成失败' not in questions[0].get('question', ''):
+        try:
+            execute('UPDATE ai_courses SET quiz_content=%s WHERE id=%s',
+                    (json.dumps([questions], ensure_ascii=False), course_id))
+        except Exception:
+            pass
+    return jsonify({'questions': questions, 'topic': topic, 'fromCache': False, 'group': group, 'totalGroups': 1})
 
 
 @app.route('/api/student/ai/quiz/grade', methods=['POST'])
@@ -1148,30 +1198,101 @@ def ai_quiz_grade():
     return jsonify(result)
 
 
+def _short_pet_name(pet_name):
+    """宠物短名：'小狗球球'这类'动物+名字'的4字名只保留后两个字（球球），
+    2-3字名保持原样。动画/绘本里用短名，避免名字过长与小白的名字重叠。"""
+    name = (pet_name or '').strip()
+    if len(name) >= 4:
+        return name[-2:]
+    return name or '球球'
+
+
+def _personalize_book(book, pet_name):
+    """将绘本内容中的"小老师"替换为宠物短名（如：球球），宠物是像哆啦A梦一样的好伙伴，不叫老师"""
+    teacher = _short_pet_name(pet_name)
+    def _replace(text):
+        return text.replace('小老师', teacher) if text else text
+    resp = {}
+    for k, v in book.items():
+        if k == '_fromCache':
+            continue
+        if k == 'pages' and isinstance(v, list):
+            resp[k] = [{'text': _replace(p.get('text', '')),
+                        'svg': llm_service._normalize_book_svg(_replace(p.get('svg', '')))} for p in v]
+        elif k == 'title':
+            resp[k] = _replace(v)
+        else:
+            resp[k] = v
+    return resp
+
+
 @app.route('/api/student/ai/picture-book/generate', methods=['POST'])
 @login_required
 def ai_book_generate():
     sid = request.login_user['id']
     data = request.get_json(silent=True) or {}
     topic = data.get('topic', '什么是人工智能')
+    course_id = data.get('courseId') or 0
     s = query('SELECT grade_level FROM students WHERE id=%s', (sid,), one=True)
     grade = (s['grade_level'] if s and s['grade_level'] else 'lower_primary') or 'lower_primary'
-    book = llm_service.generate_picture_book(topic, grade)
-    # 保存绘本
-    execute('INSERT INTO picture_books(student_id,title,topic,content) VALUES(%s,%s,%s,%s)',
+
+    # 优先返回预生成绘本（按课程缓存），避免等待AI创作
+    book = None
+    if course_id:
+        row = query('SELECT title, book_content FROM ai_courses WHERE id=%s', (course_id,), one=True)
+    else:
+        # 未指定课程时，按主题标题兜底匹配课程缓存
+        row = query('SELECT title, book_content FROM ai_courses WHERE title=%s LIMIT 1', (topic,), one=True)
+    if row and row['book_content']:
+            try:
+                book = json.loads(row['book_content'])
+                book['_fromCache'] = True
+            except Exception:
+                book = None
+
+    if book is None:
+        book = llm_service.generate_picture_book(topic, grade)
+        book['_fromCache'] = False
+        # 回写课程缓存，保证下次直接可用
+        if course_id and '生成失败' not in str(book.get('pages', [{}])[0].get('text', '')):
+            try:
+                execute('UPDATE ai_courses SET book_content=%s WHERE id=%s',
+                        (json.dumps(book, ensure_ascii=False), course_id))
+            except Exception:
+                pass
+
+    # 保存到学生个人绘本记录（历史/收藏功能保留）
+    try:
+        book_id = execute_return_id(
+            'INSERT INTO picture_books(student_id,title,topic,content) VALUES(%s,%s,%s,%s)',
             (sid, book.get('title', topic), topic, json.dumps(book, ensure_ascii=False)))
+    except Exception:
+        book_id = 0
     # 记录学习行为
     execute('INSERT INTO learning_records(student_id,course_id,topic,learn_type) VALUES(%s,%s,%s,%s)',
-            (sid, data.get('courseId', 0), topic, 'book'))
-    return jsonify(book)
+            (sid, course_id, topic, 'book'))
+    # 将绘本中的"小老师"替换为当前学生的宠物名（如：球球老师）
+    sp = query('SELECT pet_name FROM student_pets WHERE student_id=%s AND is_active=1', (sid,), one=True)
+    pet_name = sp['pet_name'] if sp else '球球'
+    resp = _personalize_book(book, pet_name)
+    resp['fromCache'] = book.get('_fromCache', False)
+    resp['recordId'] = book_id
+    resp['isFavorite'] = False
+    return jsonify(resp)
 
 
 @app.route('/api/student/ai/picture-books', methods=['GET'])
 @login_required
 def ai_book_list():
     sid = request.login_user['id']
-    rows = query('SELECT * FROM picture_books WHERE student_id=%s ORDER BY id DESC LIMIT 10', (sid,))
-    return jsonify([{'id': r['id'], 'title': r['title'], 'topic': r['topic'],
+    sp = query('SELECT pet_name FROM student_pets WHERE student_id=%s AND is_active=1', (sid,), one=True)
+    pet_name = sp['pet_name'] if sp else '球球'
+    teacher = _short_pet_name(pet_name)
+    only_fav = request.args.get('favorite') == '1'
+    sql = 'SELECT * FROM picture_books WHERE student_id=%s' + (' AND is_favorite=1' if only_fav else '')
+    rows = query(sql + ' ORDER BY id DESC LIMIT 100', (sid,))
+    return jsonify([{'id': r['id'], 'title': (r['title'] or '').replace('小老师', teacher),
+                     'topic': r['topic'],
                      'createdAt': str(r['created_at'])[:10],
                      'isFavorite': bool(r.get('is_favorite', 0))} for r in rows])
 
@@ -1187,6 +1308,9 @@ def ai_book_detail(bid):
         content = json.loads(r['content']) if r['content'] else {}
     except Exception:
         content = {}
+    sp = query('SELECT pet_name FROM student_pets WHERE student_id=%s AND is_active=1', (sid,), one=True)
+    pet_name = sp['pet_name'] if sp else '球球'
+    content = _personalize_book(content, pet_name)
     return jsonify({'id': r['id'], 'title': r['title'], 'topic': r['topic'],
                     'createdAt': str(r['created_at'])[:10],
                     'isFavorite': bool(r.get('is_favorite', 0)),
@@ -1204,21 +1328,6 @@ def ai_book_favorite(bid):
     new_val = 0 if r['is_favorite'] else 1
     execute('UPDATE picture_books SET is_favorite=%s WHERE id=%s', (new_val, bid))
     return jsonify({'success': True, 'isFavorite': bool(new_val)})
-
-
-@app.route('/api/student/ai/animation/generate', methods=['POST'])
-@login_required
-def ai_animation_generate():
-    sid = request.login_user['id']
-    data = request.get_json(silent=True) or {}
-    topic = data.get('topic', '冒泡排序')
-    s = query('SELECT grade_level FROM students WHERE id=%s', (sid,), one=True)
-    grade = (s['grade_level'] if s and s['grade_level'] else 'upper_primary') or 'upper_primary'
-    result = llm_service.generate_animation(topic, grade)
-    # 记录学习行为
-    execute('INSERT INTO learning_records(student_id,course_id,topic,learn_type) VALUES(%s,%s,%s,%s)',
-            (sid, data.get('courseId', 0), topic, 'animation'))
-    return jsonify(result)
 
 
 @app.route('/api/student/ai/learning-path', methods=['GET'])
@@ -1300,6 +1409,34 @@ def student_chat_rollback():
     if last_user:
         execute('DELETE FROM chat_history WHERE id=%s AND student_id=%s', (last_user['id'], sid))
     return ok(message='已撤回上一轮对话')
+
+
+@app.route('/api/student/chat/guide', methods=['POST'])
+@login_required
+def student_chat_guide():
+    """课程引导语 — 学生点击/切换课程时，AI主动围绕该课程给出学习引导"""
+    sid = request.login_user['id']
+    data = request.get_json(silent=True) or {}
+    course_id = data.get('courseId') or 0
+    topic = (data.get('topic') or '').strip()
+
+    # 解析课程标题
+    course_title = topic
+    if course_id:
+        row = query('SELECT title FROM ai_courses WHERE id=%s', (course_id,), one=True)
+        if row:
+            course_title = row['title']
+    if not course_title:
+        return jsonify({'message': '缺少课程信息'}), 400
+
+    s = query('SELECT grade_level FROM students WHERE id=%s', (sid,), one=True)
+    sp = query('SELECT pet_name FROM student_pets WHERE student_id=%s AND is_active=1', (sid,), one=True)
+    grade_level = (s['grade_level'] if s and s['grade_level'] else 'upper_primary') or 'upper_primary'
+    pet_name = sp['pet_name'] if sp else '球球'
+
+    reply = llm_service.generate_course_guide(course_title, grade_level, pet_name)
+    t = datetime.datetime.now().strftime('%H:%M')
+    return jsonify({'reply': reply, 'time': t, 'pet_name': pet_name})
 
 
 # ---- 学习资料 ----

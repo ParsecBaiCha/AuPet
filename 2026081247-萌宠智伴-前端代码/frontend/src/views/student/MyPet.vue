@@ -186,7 +186,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.my-pet { height: 730px; padding: 0; }
+.my-pet { height: 100%; min-height: 620px; padding: 0; }
 .content-wrapper { display: grid; grid-template-columns: 280px 1fr 320px; gap: 12px; height: 100%; align-items: stretch; }
 .left-panel, .center-panel, .right-panel { background: rgba(255, 250, 235, 0.98); border-radius: 5px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15); display: flex; flex-direction: column; overflow: hidden; }
 .left-panel { padding: 8px; }
