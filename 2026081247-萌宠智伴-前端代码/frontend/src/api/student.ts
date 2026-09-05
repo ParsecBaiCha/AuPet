@@ -32,13 +32,15 @@ export const studentApi = {
   generateBook: (data: { topic: string; courseId?: number }) =>
     api.post('/student/ai/picture-book/generate', data),
   getBooks: () => sGet('/student/ai/picture-books'),
+  getFavoriteBooks: () => sGet('/student/ai/picture-books?favorite=1'),
   getBook: (id: number) => sGet(`/student/ai/picture-books/${id}`),
   toggleBookFavorite: (id: number) => api.post(`/student/ai/picture-books/${id}/favorite`),
-  generateAnimation: (data: { topic: string; courseId?: number }) =>
-    api.post('/student/ai/animation/generate', data),
   getLearningPath: () => sGet('/student/ai/learning-path'),
   getAIChatHistory: () => sGet('/student/ai/chat/history'),
-  sendAIChat: (message: string) => api.post('/student/chat', { message }),
+  sendAIChat: (message: string, courseId?: number, topic?: string) =>
+    api.post('/student/chat', { message, courseId, topic }),
+  getCourseGuide: (courseId: number, topic?: string) =>
+    api.post('/student/chat/guide', { courseId, topic }),
   deleteChatMessage: (msgId: number) => api.delete(`/student/chat/${msgId}`),
   editChatMessage: (msgId: number, content: string) => api.put(`/student/chat/${msgId}`, { content }),
   clearChat: () => api.post('/student/chat/clear'),
