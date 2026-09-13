@@ -1,12 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
+import { DEFAULT_PET_IMAGE, DEFAULT_STUDENT_AVATAR } from '../utils/images'
 
 export const useUserStore = defineStore('user', () => {
 
   // 初始值为空，由各页面在 onMounted 时从后端 API 填充
   const studentInfo = reactive({
     name: '',
-    avatar: '',
+    avatar: DEFAULT_STUDENT_AVATAR,
     class: '',
     email: '',
     phone: '',
@@ -15,7 +16,7 @@ export const useUserStore = defineStore('user', () => {
 
   const petInfo = reactive({
     name: '',
-    type: '',
+    type: DEFAULT_PET_IMAGE,
     birthday: '',
     gender: '',
     bio: '',

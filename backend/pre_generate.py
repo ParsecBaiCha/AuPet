@@ -7,16 +7,10 @@
 import sys
 import time
 import json
-import pymysql
 
 sys.path.insert(0, '.')
 import llm_service
-
-DB_CONFIG = {
-    'host': '127.0.0.1', 'user': 'root', 'password': '092236',
-    'database': 'teacher_psych_system', 'port': 3306,
-    'charset': 'utf8mb4', 'cursorclass': pymysql.cursors.DictCursor,
-}
+from app import get_db
 
 QUIZ_GROUPS = 3      # 每门课生成几组题
 FORCE = '--force' in sys.argv
@@ -25,10 +19,6 @@ if '--only' in sys.argv:
     idx = sys.argv.index('--only')
     if idx + 1 < len(sys.argv):
         ONLY = sys.argv[idx + 1]
-
-
-def get_db():
-    return pymysql.connect(**DB_CONFIG)
 
 
 def has_content(cur, cid, col):

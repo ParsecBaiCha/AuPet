@@ -1,5 +1,5 @@
 # AuPet Project Stopper
-$mysqlService = "QnSQL80"
+$mysqlService = "MySQL80"
 
 Write-Host "============================================" -ForegroundColor Yellow
 Write-Host "       AuPet Project Stopper" -ForegroundColor Yellow

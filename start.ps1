@@ -1,16 +1,14 @@
 # AuPet Project Launcher
-$env:PATH = $env:PATH + ";C:\Users\Parsec\AppData\Local\Programs\Python\Python312;C:\Program Files\nodejs"
-
-$backendDir = "d:\DESK\a自建桌面\萌宠智伴\backend"
-$frontendDir = "d:\DESK\a自建桌面\萌宠智伴\2026081247-萌宠智伴-前端代码\frontend"
-$mysqlService = "QnSQL80"
+$backendDir = Join-Path $PSScriptRoot "backend"
+$frontendDir = Join-Path $PSScriptRoot "2026081247-萌宠智伴-前端代码\frontend"
+$mysqlService = "MySQL80"
 
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host "       AuPet Project Launcher" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Services to start:"
-Write-Host "  [0] MySQL    (QnSQL80)  -> localhost:3306"
+Write-Host "  [0] MySQL    ($mysqlService)  -> localhost:3306"
 Write-Host "  [1] Backend  (Flask)    -> http://localhost:8000"
 Write-Host "  [2] Frontend (Vite)     -> http://localhost:3000"
 Write-Host ""
@@ -30,7 +28,7 @@ if ($svc) {
             Write-Host "      MySQL started." -ForegroundColor DarkGray
         } catch {
             Write-Host "      [Warning] Failed to start MySQL: $_" -ForegroundColor Red
-            Write-Host "      Please start it manually: services.msc -> QnSQL80 -> Start" -ForegroundColor Yellow
+            Write-Host "      Please start it manually: services.msc -> $mysqlService -> Start" -ForegroundColor Yellow
         }
     }
 } else {

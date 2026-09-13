@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useUserStore } from '../../stores/user'
+import { DEFAULT_PET_IMAGE, DEFAULT_STUDENT_AVATAR, setImageFallback } from '../../utils/images'
 
 const userStore = useUserStore()
 const activeTab = ref('profile')
@@ -64,10 +65,10 @@ const savePetInfo = () => {
       <div v-if="activeTab === 'profile'" class="settings-panel">
         <h2>个人信息</h2>
         <div class="avatar-section">
-          <img class="current-avatar" :src="userStore.studentInfo.avatar" alt="avatar" @error="($event.target as HTMLImageElement).src = '/images/pets/default.jpg'" />
+          <img class="current-avatar" :src="userStore.studentInfo.avatar" alt="avatar" @error="setImageFallback($event, DEFAULT_STUDENT_AVATAR)" />
           <div class="avatar-options">
             <button v-for="avatar in avatarOptions" :key="avatar" class="avatar-btn" :class="{ selected: userStore.studentInfo.avatar === avatar }" @click="userStore.studentInfo.avatar = avatar">
-              <img :src="avatar" @error="($event.target as HTMLImageElement).src = '/images/pets/default.jpg'" />
+              <img :src="avatar" @error="setImageFallback($event, DEFAULT_STUDENT_AVATAR)" />
             </button>
           </div>
         </div>
@@ -99,14 +100,14 @@ const savePetInfo = () => {
       <div v-if="activeTab === 'pet'" class="settings-panel">
         <h2>宠物信息</h2>
         <div class="pet-preview">
-          <img class="pet-avatar" :src="userStore.petInfo.type" alt="pet" @error="($event.target as HTMLImageElement).src = '/images/pets/default.jpg'" />
+          <img class="pet-avatar" :src="userStore.petInfo.type" alt="pet" @error="setImageFallback($event, DEFAULT_PET_IMAGE)" />
           <span class="pet-name">{{ userStore.petInfo.name }}</span>
         </div>
         <div class="avatar-section">
           <div class="section-label">选择宠物类型</div>
           <div class="avatar-options">
             <button v-for="type in petTypeOptions" :key="type" class="avatar-btn pet-type" :class="{ selected: userStore.petInfo.type === type }" @click="userStore.petInfo.type = type">
-              <img :src="type" @error="($event.target as HTMLImageElement).src = '/images/pets/default.jpg'" />
+              <img :src="type" @error="setImageFallback($event, DEFAULT_PET_IMAGE)" />
             </button>
           </div>
         </div>

@@ -8,6 +8,7 @@ import json
 import random
 import datetime
 import re
+import os
 from functools import wraps
 
 from flask import Flask, request, jsonify
@@ -15,16 +16,26 @@ from flask_cors import CORS
 import pymysql
 import llm_service
 
+try:
+    import config_local
+except ImportError:
+    config_local = None
+
 app = Flask(__name__)
 CORS(app)
 
 # ============ 数据库配置 ============
+def _setting(name, default):
+    """Read deployment settings from environment first, then config_local.py."""
+    return os.environ.get(name, getattr(config_local, name, default) if config_local else default)
+
+
 DB_CONFIG = {
-    'host': '127.0.0.1',
-    'user': 'root',
-    'password': '092236',
-    'database': 'teacher_psych_system',
-    'port': 3306,
+    'host': _setting('DB_HOST', '127.0.0.1'),
+    'user': _setting('DB_USER', 'root'),
+    'password': _setting('DB_PASSWORD', ''),
+    'database': _setting('DB_NAME', 'teacher_psych_system'),
+    'port': int(_setting('DB_PORT', '3306')),
     'charset': 'utf8mb4',
     'cursorclass': pymysql.cursors.DictCursor,
 }
@@ -1485,4 +1496,4 @@ def ai_suggested_questions():
 
 if __name__ == '__main__':
     print('萌宠智伴后端启动: http://localhost:8000')
-    app.run(host='0.0.0.0', port=8000, debug=True)
+    app.run(host='0.0.0.0', port=8000, debug=_setting('FLASK_DEBUG', '0') == '1')

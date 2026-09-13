@@ -2,6 +2,7 @@
 import { ref, nextTick, onMounted } from 'vue'
 import { useUserStore } from '../../stores/user'
 import { studentApi } from '../../api/student'
+import { DEFAULT_PET_IMAGE, DEFAULT_STUDENT_AVATAR, setImageFallback } from '../../utils/images'
 
 const userStore = useUserStore()
 
@@ -80,7 +81,7 @@ onMounted(async () => {
   <!-- Chat header bar removed, using the chat-container header instead -->
   <div class="chat-container">
     <div class="chat-header">
-      <img class="pet-avatar" :src="userStore.petInfo.type" alt="pet" @error="($event.target as HTMLImageElement).src = '/images/pets/default.jpg'" />
+      <img class="pet-avatar" :src="userStore.petInfo.type" alt="pet" @error="setImageFallback($event, DEFAULT_PET_IMAGE)" />
       <div class="pet-info">
         <div class="pet-name-status">
           <h3>{{ userStore.petInfo.name }}</h3>
@@ -111,12 +112,12 @@ onMounted(async () => {
 
     <div class="messages-container" ref="chatContainer">
       <div v-for="msg in messages" :key="msg.id" class="message" :class="{ 'user-message': msg.type === 'user', 'pet-message': msg.type === 'pet' }">
-        <img v-if="msg.type === 'pet'" class="avatar" :src="userStore.petInfo.type" alt="pet" @error="($event.target as HTMLImageElement).src = '/images/pets/default.jpg'" />
+        <img v-if="msg.type === 'pet'" class="avatar" :src="userStore.petInfo.type" alt="pet" @error="setImageFallback($event, DEFAULT_PET_IMAGE)" />
         <div class="message-content">
           <div class="bubble">{{ msg.content }}</div>
           <div class="time">{{ msg.time }}</div>
         </div>
-        <img v-if="msg.type === 'user'" class="avatar" :src="userStore.studentInfo.avatar" alt="user" @error="($event.target as HTMLImageElement).src = '/images/pets/default.jpg'" />
+        <img v-if="msg.type === 'user'" class="avatar" :src="userStore.studentInfo.avatar" alt="user" @error="setImageFallback($event, DEFAULT_STUDENT_AVATAR)" />
       </div>
     </div>
 
