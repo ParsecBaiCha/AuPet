@@ -5,7 +5,6 @@ import { studentApi } from '../../api/student'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DEFAULT_PET_IMAGE, DEFAULT_STUDENT_AVATAR, setImageFallback } from '../../utils/images'
 import DeepLearningLesson from './DeepLearningLesson.vue'
-import OnlineProgrammingLesson from './OnlineProgrammingLesson.vue'
 
 const userStore = useUserStore()
 
@@ -55,7 +54,7 @@ const selectCourse = (c: any) => {
     quizGroup.value = 0
     generateQuiz()
   }
-  if (activeTab.value === 'book' && grade.value !== 'high_school') {
+  if (activeTab.value === 'book') {
     bookData.value = null
     generateBook()
   }
@@ -864,7 +863,7 @@ const loadLearningPath = async () => {
 // ===== 切换标签时加载数据 =====
 watch(activeTab, (tab) => {
   if (tab === 'path' && !learningPath.value) loadLearningPath()
-  if (tab === 'book' && grade.value !== 'high_school') {
+  if (tab === 'book') {
     loadFavoriteList()
     // 课程已有预生成绘本时，进入即直接播放，无需点击生成
     if (!bookData.value) {
@@ -1450,11 +1449,7 @@ onMounted(async () => {
       </div>
 
       <!-- 绘本生成 -->
-      <div v-if="activeTab === 'book' && grade === 'high_school'" class="tab-content programming-tab">
-        <OnlineProgrammingLesson v-if="selectedCourse" :key="selectedCourse.id" :course-title="selectedCourse.title" />
-        <div v-else class="empty-state"><p>请在左侧选择课程，开始在线编程练习。</p></div>
-      </div>
-      <div v-if="activeTab === 'book' && grade !== 'high_school'" class="tab-content book-tab">
+      <div v-if="activeTab === 'book'" class="tab-content book-tab">
         <div class="book-layout">
           <!-- 主播放区 -->
           <div class="book-main">

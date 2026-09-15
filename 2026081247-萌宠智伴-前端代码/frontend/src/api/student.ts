@@ -25,7 +25,7 @@ export const studentApi = {
   getAICourses: (grade: string) => sGet(`/student/ai/courses?grade=${grade}`),
   getGrade: () => sGet('/student/ai/grade'),
   setGrade: (grade: string) => api.post('/student/ai/grade', { grade }),
-  generateQuiz: (data: { topic: string; count?: number; courseId?: number }) =>
+  generateQuiz: (data: { topic: string; count?: number; courseId?: number; group?: number }) =>
     api.post('/student/ai/quiz/generate', data),
   gradeQuiz: (data: { questions: any[]; answers: number[]; topic?: string; courseId?: number }) =>
     api.post('/student/ai/quiz/grade', data),

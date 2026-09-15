@@ -1,0 +1,66 @@
+.lesson-pagination {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-height: 52px;
+  margin-top: 8px;
+  padding: 12px 0 0;
+  border-top: 1px solid #f0e5d8;
+  color: #9a8066;
+  font-size: 14px;
+}
+.lesson-pagination > button {
+  min-width: 88px;
+  min-height: 38px;
+  padding: 8px 18px;
+  border: 1px solid #efcfaa;
+  border-radius: 16px;
+  background: #fff;
+  color: #9c672e;
+  font: inherit;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color .2s, border-color .2s;
+}
+.lesson-pagination > button:hover:not(:disabled) {
+  border-color: #f0a23c;
+  background: #fff7eb;
+}
+.lesson-pagination > .lesson-next {
+  background: #f5a623;
+  border-color: #f5a623;
+  color: #fff;
+}
+.lesson-pagination > .lesson-next:hover:not(:disabled) {
+  background: #e89016;
+  border-color: #e89016;
+  color: #fff;
+}
+.lesson-pagination > button:disabled {
+  background: #faf7f2;
+  border-color: #ece3d8;
+  color: #bdb1a3;
+  opacity: 1;
+  cursor: not-allowed;
+}
+.lesson-pagination button:focus-visible {
+  outline: 2px solid #e89016;
+  outline-offset: 3px;
+}
+.lesson-page-dots { display: flex; align-items: center; gap: 6px; }
+.lesson-page-dots button {
+  width: 8px;
+  height: 8px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #ded6cd;
+  cursor: pointer;
+}
+.lesson-page-dots button:hover { background: #efcfaa; }
+.lesson-page-dots button.active { width: 20px; border-radius: 5px; background: #f5a623; }

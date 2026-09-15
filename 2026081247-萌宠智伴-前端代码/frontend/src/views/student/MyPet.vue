@@ -3,13 +3,14 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../../stores/user'
 import { studentApi } from '../../api/student'
+import { DEFAULT_PET_IMAGE, DEFAULT_STUDENT_AVATAR, setImageFallback } from '../../utils/images'
 
 const router = useRouter()
 const userStore = useUserStore()
 
 const pet = ref({
   name: '',
-  type: '',
+  type: DEFAULT_PET_IMAGE,
   level: '',
   exp: 0,
   maxExp: 0,
@@ -83,7 +84,7 @@ onMounted(async () => {
     <!-- Left Panel: Student Card + Pet Details -->
     <div class="left-panel">
       <div class="student-card">
-        <img class="avatar" :src="userStore.studentInfo.avatar" alt="avatar" @error="($event.target as HTMLImageElement).src = '/images/pets/default.jpg'" />
+        <img class="avatar" :src="userStore.studentInfo.avatar" alt="avatar" @error="setImageFallback($event, DEFAULT_STUDENT_AVATAR)" />
         <h3>{{ userStore.studentInfo.name }}</h3>
         <p class="class-name">{{ userStore.studentInfo.class }}</p>
         <div class="student-stats">
@@ -129,7 +130,7 @@ onMounted(async () => {
 
         <div class="pet-box">
           <div class="pet-container">
-            <img class="pet-sprite" :src="pet.type" alt="pet" @error="($event.target as HTMLImageElement).src = '/images/pets/default.jpg'" />
+            <img class="pet-sprite" :src="pet.type" alt="pet" @error="setImageFallback($event, DEFAULT_PET_IMAGE)" />
           </div>
           <div class="pet-animation">
             <div class="shadow"></div>
@@ -154,7 +155,7 @@ onMounted(async () => {
       </div>
       <div class="mall-items">
         <div v-for="item in foodItems" :key="item.id" class="mall-item" @click="selectItem(item)">
-          <img class="item-image" :src="item.image" :alt="item.name" @error="($event.target as HTMLImageElement).src = '/images/pets/default.jpg'" />
+          <img class="item-image" :src="item.image" :alt="item.name" @error="setImageFallback($event, DEFAULT_PET_IMAGE)" />
           <div class="item-name">{{ item.name }}</div>
           <div class="item-price">{{ item.price }}积分</div>
           <div class="item-exp">+{{ item.exp }}经验</div>
@@ -168,7 +169,7 @@ onMounted(async () => {
       <div class="dialog-content">
         <h3>确认购买</h3>
         <div class="dialog-item">
-          <img class="item-image" :src="selectedItem?.image" :alt="selectedItem?.name" @error="($event.target as HTMLImageElement).src = '/images/pets/default.jpg'" />
+          <img class="item-image" :src="selectedItem?.image" :alt="selectedItem?.name" @error="setImageFallback($event, DEFAULT_PET_IMAGE)" />
           <div class="item-info">
             <span class="item-name">{{ selectedItem?.name }}</span>
             <span class="item-price">价格：{{ selectedItem?.price }}积分</span>

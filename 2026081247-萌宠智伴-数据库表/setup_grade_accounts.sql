@@ -13,12 +13,20 @@ WHERE NOT EXISTS (SELECT 1 FROM classes WHERE name = '高一1班');
 INSERT INTO students
   (name, student_no, password, class_id, gender, avatar, email, points, task_completion_rate, mood_index, mood_status, personality, grade_level)
 SELECT
-  '林知远', '20260101', MD5('123456'), c.id, 'male', '/images/avatars/boy1.jpg',
+  '林知远', '20260101', MD5('123456'), c.id, 'male', '/images/avatars/stu.jpg',
   'linzhiyuan@school.com', 1260, 72, 5, '良好', '自律、善于思考，喜欢探索人工智能与科学问题', 'high_school'
 FROM classes c
 WHERE c.name = '高一1班'
   AND NOT EXISTS (SELECT 1 FROM students WHERE student_no = '20260101');
 
+-- 修复已存在的测试账号（旧数据曾使用不存在的 boy1.jpg，并被错误标为低年级）。
+UPDATE students s
+JOIN classes c ON c.name = '高一1班'
+SET s.class_id = c.id,
+    s.avatar = '/images/avatars/stu.jpg',
+    s.grade_level = 'high_school'
+WHERE s.student_no = '20260101';
+
 -- 已有的张小明账号对应一年级；给其补上低年级 AI 学习阶段。
-UPDATE students SET grade_level = 'lower_primary'
+UPDATE students SET avatar = '/images/avatars/dz.jpg', grade_level = 'lower_primary'
 WHERE student_no = '20250101';

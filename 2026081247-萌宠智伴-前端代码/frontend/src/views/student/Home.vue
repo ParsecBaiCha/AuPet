@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useUserStore } from '../../stores/user'
 import { studentApi } from '../../api/student'
 import SeniorHome from './SeniorHome.vue'
+import { DEFAULT_PET_IMAGE, DEFAULT_STUDENT_AVATAR, setImageFallback } from '../../utils/images'
 
 const userStore = useUserStore()
 
@@ -41,14 +42,14 @@ onMounted(async () => {
   <!-- Dashboard header with user info -->
   <div class="dashboard">
     <div class="dashboard-left">
-      <img class="avatar" :src="userStore.studentInfo.avatar" alt="avatar" @error="($event.target as HTMLImageElement).src = '/images/pets/default.jpg'" />
+      <img class="avatar" :src="userStore.studentInfo.avatar" alt="avatar" @error="setImageFallback($event, DEFAULT_STUDENT_AVATAR)" />
       <div class="user-info">
         <span class="user-name">{{ userStore.studentInfo.name }}</span>
         <span class="class-name">{{ userStore.studentInfo.class }}</span>
       </div>
     </div>
     <div class="dashboard-center">
-      <img class="pet-icon" :src="userStore.petInfo.type" alt="pet" @error="($event.target as HTMLImageElement).src = '/images/pets/default.jpg'" />
+      <img class="pet-icon" :src="userStore.petInfo.type" alt="pet" @error="setImageFallback($event, DEFAULT_PET_IMAGE)" />
       <div class="pet-info">
         <span class="pet-name">{{ userStore.petInfo.name }}</span>
       </div>
@@ -57,7 +58,7 @@ onMounted(async () => {
 
   <div class="pets-grid">
     <div v-for="pet in classPets" :key="pet.id" class="pet-card">
-      <img class="pet-avatar" :src="pet.petImage" :alt="pet.petName" @error="($event.target as HTMLImageElement).src = '/images/pets/default.jpg'" />
+      <img class="pet-avatar" :src="pet.petImage" :alt="pet.petName" @error="setImageFallback($event, DEFAULT_PET_IMAGE)" />
       <div class="pet-info">
         <span class="pet-name">{{ pet.petName }}</span>
         <span class="student-name">{{ pet.studentName }}</span>

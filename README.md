@@ -177,11 +177,13 @@ cd backend
 # 安装依赖
 pip install flask flask-cors pymysql requests
 
-# 配置 DeepSeek API Key（创建 config_local.py）
-echo 'DEEPSEEK_API_KEY = "your_api_key_here"' > config_local.py
-
-# 修改 app.py 中的数据库连接配置（host/user/password/port）
-# 默认配置: 127.0.0.1 / root / 092236 / 3306
+# 在不提交到版本库的 config_local.py 中配置 DeepSeek 与本机数据库
+# DEEPSEEK_API_KEY = "your_api_key_here"
+# DB_HOST = "127.0.0.1"
+# DB_USER = "root"
+# DB_PASSWORD = "your_mysql_password"
+# DB_NAME = "teacher_psych_system"
+# DB_PORT = "3306"
 
 # 启动服务
 python app.py

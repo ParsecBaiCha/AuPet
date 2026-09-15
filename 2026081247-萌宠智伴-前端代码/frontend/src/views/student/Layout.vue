@@ -33,7 +33,7 @@
 
       <div class="sidebar-footer">
         <div class="user-info">
-          <img class="user-avatar" :src="userStore.studentInfo.avatar" alt="avatar" />
+          <img class="user-avatar" :src="userStore.studentInfo.avatar" alt="avatar" @error="setImageFallback($event, DEFAULT_STUDENT_AVATAR)" />
           <div class="user-details">
             <span class="user-name">{{ userStore.studentInfo.name }}</span>
             <span class="user-status">在线</span>
@@ -54,12 +54,12 @@
         </div>
         <div class="header-right">
           <div class="top-user">
-            <img class="top-avatar" :src="userStore.studentInfo.avatar" alt="" />
+            <img class="top-avatar" :src="userStore.studentInfo.avatar" alt="" @error="setImageFallback($event, DEFAULT_STUDENT_AVATAR)" />
             <span class="top-name">{{ userStore.studentInfo.name }}</span>
             <span class="top-class">{{ userStore.studentInfo.class }}</span>
           </div>
           <div class="top-pet">
-            <img class="top-pet-img" :src="userStore.petInfo.type" alt="" />
+            <img class="top-pet-img" :src="userStore.petInfo.type" alt="" @error="setImageFallback($event, DEFAULT_PET_IMAGE)" />
             <span class="top-pet-name">我的宠物：{{ userStore.petInfo.name }}</span>
           </div>
         </div>
@@ -77,6 +77,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAppStore } from '../../stores/app'
 import { useUserStore } from '../../stores/user'
+import { DEFAULT_PET_IMAGE, DEFAULT_STUDENT_AVATAR, setImageFallback } from '../../utils/images'
 
 const router = useRouter()
 const route = useRoute()
