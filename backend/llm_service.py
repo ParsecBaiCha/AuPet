@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """DeepSeek 大语言模型服务模块
-提供对话、出题、绘本生成、动画代码生成等功能。
+提供对话、出题、故事绘本、动画代码生成等功能。
 """
 import os
 import json
@@ -211,7 +211,7 @@ def _normalize_book_svg(svg_str):
 
 
 def generate_picture_book(topic, grade_level='lower_primary'):
-    """绘本生成 — 面向低龄学生
+    """故事绘本 — 面向低龄学生
 
     Returns: {'title': str, 'pages': [{'text': str, 'svg': str}]}
     故事设定：小老师（宠物角色）教小白（小朋友）学习知识点。
@@ -258,7 +258,7 @@ def generate_picture_book(topic, grade_level='lower_primary'):
     except (json.JSONDecodeError, ValueError):
         return {
             'title': f'{topic}的绘本',
-            'pages': [{'text': '绘本生成失败，请重试', 'svg': '<svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="50" fill="#f48d45"/></svg>'}],
+            'pages': [{'text': '故事绘本创建失败，请重试', 'svg': '<svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="50" fill="#f48d45"/></svg>'}],
         }
 
 

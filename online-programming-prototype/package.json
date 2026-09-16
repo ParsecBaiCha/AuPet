@@ -1,1 +1,0 @@
-{"private":true,"scripts":{"start":"node server.cjs","test":"node verify-runtime.cjs && node verify-tutor.cjs"},"engines":{"node":">=22"}}
