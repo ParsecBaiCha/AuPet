@@ -102,7 +102,7 @@ const tabs = [
   { key: 'materials', label: '学习资料', icon: '料' },
   { key: 'quiz', label: '云笺小试', icon: '试' },
   { key: 'animation', label: '动画讲解', icon: '动' },
-  { key: 'book', label: '绘本生成', icon: '本' },
+  { key: 'book', label: '故事绘本', icon: '本' },
   { key: 'path', label: '学习路径', icon: '路' },
 ]
 
@@ -732,7 +732,7 @@ const turnAlgorithmPage = (offset: number) => {
 
 watch([grade, () => selectedCourse.value?.id], closeAlgorithmConcept)
 
-// ===== 绘本生成 =====
+// ===== 故事绘本 =====
 const bookData = ref<any>(null)
 const favBooks = ref<any[]>([])
 const bookLoading = ref(false)
@@ -1448,7 +1448,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- 绘本生成 -->
+      <!-- 故事绘本 -->
       <div v-if="activeTab === 'book'" class="tab-content book-tab">
         <div class="book-layout">
           <!-- 主播放区 -->

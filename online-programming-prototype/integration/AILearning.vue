@@ -103,7 +103,7 @@ const tabs = [
   { key: 'materials', label: '学习资料', icon: '料' },
   { key: 'quiz', label: '云笺小试', icon: '试' },
   { key: 'animation', label: '动画讲解', icon: '动' },
-  { key: 'book', label: '绘本生成', icon: '本' },
+  { key: 'book', label: '故事绘本', icon: '本' },
   { key: 'path', label: '学习路径', icon: '路' },
 ]
 
@@ -733,7 +733,7 @@ const turnAlgorithmPage = (offset: number) => {
 
 watch([grade, () => selectedCourse.value?.id], closeAlgorithmConcept)
 
-// ===== 绘本生成 =====
+// ===== 故事绘本 =====
 const bookData = ref<any>(null)
 const favBooks = ref<any[]>([])
 const bookLoading = ref(false)
@@ -1449,7 +1449,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- 绘本生成 -->
+      <!-- 故事绘本 -->
       <div v-if="activeTab === 'book' && grade === 'high_school'" class="tab-content programming-tab">
         <OnlineProgrammingLesson v-if="selectedCourse" :key="selectedCourse.id" :course-title="selectedCourse.title" />
         <div v-else class="empty-state"><p>请在左侧选择课程，开始在线编程练习。</p></div>

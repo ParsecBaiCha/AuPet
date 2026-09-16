@@ -8,6 +8,7 @@ import DeepLearningLesson from './DeepLearningLesson.vue'
 import OnlineProgrammingLesson from './OnlineProgrammingLesson.vue'
 
 const userStore = useUserStore()
+const coursePanelCollapsed = ref(false)
 
 // ===== 年级选择 =====
 const grade = ref('upper_primary')
@@ -103,7 +104,7 @@ const tabs = [
   { key: 'materials', label: '学习资料', icon: '料' },
   { key: 'quiz', label: '云笺小试', icon: '试' },
   { key: 'animation', label: '动画讲解', icon: '动' },
-  { key: 'book', label: '绘本生成', icon: '本' },
+  { key: 'book', label: '故事绘本', icon: '本' },
   { key: 'path', label: '学习路径', icon: '路' },
 ]
 
@@ -733,7 +734,7 @@ const turnAlgorithmPage = (offset: number) => {
 
 watch([grade, () => selectedCourse.value?.id], closeAlgorithmConcept)
 
-// ===== 绘本生成 =====
+// ===== 故事绘本 =====
 const bookData = ref<any>(null)
 const favBooks = ref<any[]>([])
 const bookLoading = ref(false)
@@ -749,6 +750,10 @@ const generateBook = async () => {
   bookPage.value = 0
   try {
     const data: any = await studentApi.generateBook({ topic, courseId: selectedCourse.value?.id })
+    if (data && data.success === false) {
+      ElMessage.info(data.message || '该课程绘本暂未准备')
+      return
+    }
     bookData.value = data
     bookRecordId.value = data?.recordId || 0
     bookFav.value = !!data?.isFavorite
@@ -991,9 +996,19 @@ onMounted(async () => {
 
   <div class="main-layout">
     <!-- 左侧：课程列表 -->
-    <aside class="course-panel">
-      <h3 class="panel-title">AI通识课程</h3>
-      <div class="course-list">
+    <aside class="course-panel" :class="{ 'is-collapsed': coursePanelCollapsed }" aria-label="课程选择">
+      <div v-show="!coursePanelCollapsed" class="course-panel-header">
+        <h3 class="panel-title">AI通识课程</h3>
+      </div>
+      <div class="course-panel-handle">
+        <button class="course-panel-toggle" type="button"
+                :aria-expanded="!coursePanelCollapsed" aria-controls="ai-course-list"
+                :aria-label="coursePanelCollapsed ? '展开课程列表' : '收起课程列表'"
+                @click="coursePanelCollapsed = !coursePanelCollapsed">
+          <span aria-hidden="true">{{ coursePanelCollapsed ? '»' : '«' }}</span>
+        </button>
+      </div>
+      <div v-show="!coursePanelCollapsed" id="ai-course-list" class="course-list">
         <div v-for="(coursesInCat, cat) in courseCategories" :key="cat" class="course-category">
           <div class="category-name">{{ cat }}</div>
           <div v-for="c in coursesInCat" :key="c.id"
@@ -1449,7 +1464,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- 绘本生成 -->
+      <!-- 故事绘本 -->
       <div v-if="activeTab === 'book' && grade === 'high_school'" class="tab-content programming-tab">
         <OnlineProgrammingLesson v-if="selectedCourse" :key="selectedCourse.id" :course-title="selectedCourse.title" />
         <div v-else class="empty-state"><p>请在左侧选择课程，开始在线编程练习。</p></div>
@@ -1474,8 +1489,11 @@ onMounted(async () => {
                 </div>
                 <div class="book-page-display">
                   <div class="book-page" v-if="bookData.pages[bookPage]">
-                    <div class="book-svg" v-html="bookData.pages[bookPage].svg"></div>
-                    <p class="book-text">{{ bookData.pages[bookPage].text }}</p>
+                    <div class="book-svg" v-if="bookData.pages[bookPage].img">
+                      <img class="book-photo" :src="bookData.pages[bookPage].img" :alt="bookData.pages[bookPage].text" />
+                    </div>
+                    <div class="book-svg" v-else v-html="bookData.pages[bookPage].svg"></div>
+                    <p class="book-text" v-if="bookData.pages[bookPage].text">{{ bookData.pages[bookPage].text }}</p>
                   </div>
                   <div class="book-nav">
                     <button @click="prevBookPage" :disabled="bookPage === 0" class="nav-btn">上一页</button>
@@ -1624,13 +1642,32 @@ onMounted(async () => {
   background: white;
   border-radius: 12px;
   padding: 16px;
-  overflow-y: auto;
+  position: relative;
+  display: flex; flex-direction: column; min-height: 0;
+  overflow: visible;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   flex-shrink: 0;
 }
-.panel-title {
-  font-size: 16px; color: #333; margin-bottom: 12px; font-weight: 600;
+.course-panel.is-collapsed { width: 8px; padding: 0; }
+.course-panel .course-list { flex: 1; min-height: 0; overflow-y: auto; }
+.course-panel-handle {
+  position: absolute; right: -12px; top: 0; bottom: 0;
+  width: 28px; z-index: 5; display: flex; align-items: center; justify-content: center;
 }
+.course-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 12px;
+}
+.panel-title { font-size: 16px; color: #333; margin: 0; font-weight: 600; }
+.course-panel-toggle {
+  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 52px; padding: 0; border: none;
+  background: transparent; color: #97551e;
+  cursor: pointer; transform: translateY(-60px);
+}
+.course-panel-toggle > span { font-size: 28px; line-height: 1; }
+.course-panel-toggle:hover { color: #d97716; }
+.course-panel-toggle:focus-visible { outline: 2px solid #b56820; outline-offset: 2px; }
 .course-list { display: flex; flex-direction: column; gap: 12px; }
 .category-name {
   font-size: 12px; color: #999; font-weight: 600;
@@ -2165,25 +2202,46 @@ onMounted(async () => {
 }
 
 /* 绘本 */
-.book-tab { padding: 20px; overflow-y: auto; }
-.book-result { max-width: 680px; margin: 0 auto; }
+.book-tab {
+  padding: 14px 18px 16px; height: 100%; overflow: hidden;
+  display: flex; flex-direction: column; min-height: 0;
+}
+.book-result {
+  width: 100%; margin: 0 auto; flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+}
 .book-title { font-size: 18px; color: #333; text-align: center; margin-bottom: 16px; }
 .book-page-display {
-  background: #fffde7; border-radius: 16px; padding: 28px;
+  flex: 1; min-height: 0;
+  background: #fffde7; border-radius: 16px; padding: 16px 22px 18px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  display: flex; flex-direction: column;
 }
-.book-page { text-align: center; }
+.book-page {
+  flex: 1; min-height: 0; text-align: center;
+  display: flex; flex-direction: column;
+}
 .book-svg {
-  display: flex; justify-content: center; margin-bottom: 16px;
+  flex: 1; min-height: 0; margin-bottom: 10px;
+  display: flex; justify-content: center; align-items: center;
+  overflow: hidden;
 }
-.book-svg :deep(svg) { max-width: 440px; width: 100%; height: auto; aspect-ratio: 1 / 1; }
+.book-svg :deep(svg) {
+  max-width: 100%; max-height: 100%; width: auto; height: auto;
+  aspect-ratio: 1 / 1; flex-shrink: 1;
+}
+.book-svg .book-photo {
+  max-width: 100%; max-height: 100%; width: auto; height: auto;
+  border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+  object-fit: contain; flex-shrink: 1;
+}
 .book-text {
-  font-size: 16px; color: #333; line-height: 1.8;
-  padding: 0 20px;
+  font-size: 15px; color: #333; line-height: 1.6;
+  padding: 0 12px; flex-shrink: 0;
 }
 .book-nav {
   display: flex; align-items: center; justify-content: center;
-  gap: 16px; margin-top: 20px;
+  gap: 16px; margin-top: 12px; flex-shrink: 0;
 }
 .nav-btn {
   padding: 8px 20px; background: #ffb74d; color: white; border: none;
@@ -2193,15 +2251,21 @@ onMounted(async () => {
 .nav-btn:disabled { background: #ddd; cursor: not-allowed; }
 .page-info { font-size: 14px; color: #666; font-weight: 500; }
 /* 绘本左右布局 */
-.book-layout { display: flex; gap: 20px; align-items: flex-start; }
-.book-main { flex: 1; min-width: 0; }
+.book-layout {
+  flex: 1; min-height: 0;
+  display: flex; gap: 16px; align-items: stretch;
+}
+.book-main {
+  flex: 1; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column;
+}
 .book-fav-panel {
   width: 230px; flex-shrink: 0; background: white; border-radius: 12px;
   padding: 14px; box-shadow: 0 2px 10px rgba(0,0,0,0.06);
-  position: sticky; top: 0; max-height: calc(100vh - 160px);
+  max-height: 100%; min-height: 0;
   display: flex; flex-direction: column;
 }
-.fav-panel-title { font-size: 15px; font-weight: 600; color: #333; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #f0e6d2; }
+.fav-panel-title { font-size: 15px; font-weight: 600; color: #333; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #f0e6d2; flex-shrink: 0; }
 .fav-book-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: 1; }
 .fav-book-item {
   display: flex; gap: 8px; align-items: flex-start; cursor: pointer;
@@ -2213,7 +2277,7 @@ onMounted(async () => {
 .fav-book-title { font-size: 13px; font-weight: 500; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fav-book-topic { font-size: 11px; color: #999; }
 .fav-panel-empty { font-size: 12px; color: #bbb; text-align: center; padding: 24px 0; line-height: 1.8; }
-.book-head-row { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 16px; }
+.book-head-row { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 14px; flex-shrink: 0; }
 .book-head-row .book-title { margin-bottom: 0; }
 .book-fav-main {
   display: inline-flex; align-items: center; gap: 4px;
@@ -2286,3 +2350,51 @@ onMounted(async () => {
 </style>
 
 <style scoped src="../../styles/lesson-pagination.css"></style>
+
+<style scoped>
+/* Clear formula hierarchy and compact reading panels. */
+.animation-tab.algorithm-mode { padding: 14px 18px; }
+.algorithm-lesson { max-width: 1440px; }
+.algorithm-lesson-head--compact { padding: 12px 16px; margin-bottom: 12px; }
+.algorithm-lesson-head h3 { margin: 4px 0 0; font-size: 22px; color: #39414b; }
+.algorithm-lesson-head p { white-space: normal; font-size: 14px; line-height: 1.5; margin: 6px 0 0; color: #68615a; }
+.algorithm-view-tag { background: #fff0cf; color: #8a5d20; font-size: 12px; }
+.algorithm-overview-grid { gap: 12px; }
+.algorithm-overview-card { padding: 16px 20px; box-shadow: none; }
+.algorithm-overview-number { color: #957a54; font-size: 13px; }
+.algorithm-overview-card h4,
+.algorithm-overview-grid--five .algorithm-overview-card h4,
+.algorithm-overview-grid--project .algorithm-overview-card h4 { font-size: 18px; line-height: 1.4; margin: 6px 0 12px; color: #343d48; }
+.algorithm-overview-card code,
+.algorithm-overview-grid--five .algorithm-overview-card code,
+.algorithm-overview-grid--project .algorithm-overview-card code {
+  font-size: clamp(17px, 1.35vw, 23px); line-height: 1.65;
+  padding: 14px; background: #f7f5fb; color: #493d65;
+}
+.algorithm-open-hint { font-size: 13px; color: #926523; margin-top: 10px; }
+.algorithm-detail-toolbar { margin-bottom: 10px; font-size: 13px; color: #746859; }
+.algorithm-back-btn { border-radius: 8px; padding: 7px 12px; font-size: 14px; }
+.algorithm-detail-head { padding: 12px 16px; gap: 16px; }
+.algorithm-detail-head h3 { font-size: 22px; line-height: 1.35; color: #343d48; }
+.algorithm-detail-formula code { font-size: clamp(18px, 1.4vw, 23px); line-height: 1.5; }
+.algorithm-detail-formula span { background: transparent; color: #75668e; padding: 0; font-size: 12px; }
+.algorithm-detail-page { gap: 10px; }
+.algorithm-page-panel { padding: 14px 16px; }
+.algorithm-page-panel > strong { font-size: 17px; margin-bottom: 8px; }
+.algorithm-page-panel p, .algorithm-page-panel li { font-size: 16px; line-height: 1.65; color: #4f535a; }
+.algorithm-page-panel--steps li { padding: 12px; gap: 10px; }
+.algorithm-page-panel--steps li > span { color: #694515; background: #ffce73; }
+.algorithm-page-panel--goals { padding: 10px 14px; }
+@media (max-height: 800px) {
+  .algorithm-lesson-head p { display: none; }
+  .algorithm-detail-head h3 { font-size: 20px; }
+  .algorithm-page-panel { padding: 10px 12px; }
+  .algorithm-page-panel p, .algorithm-page-panel li { font-size: 15px; line-height: 1.5; }
+  .algorithm-overview-card { padding: 12px 14px; }
+}
+@media (max-width: 900px) {
+  .algorithm-detail-head { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); }
+  .algorithm-overview-grid--five { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); }
+  .algorithm-overview-card h4 { font-size: 16px; }
+}
+</style>

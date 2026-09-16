@@ -67,26 +67,12 @@ def main():
                 print('    quiz already cached, skip', flush=True)
                 quiz_ok += 1
 
-        # ---- 绘本 ----
+        # ---- 绘本（已改为照片绘本模式：绘本由老师上传照片提供，不再由AI生成）----
         if ONLY and ONLY != 'book':
             print('    book skipped (--only)', flush=True)
         else:
-            need_book = FORCE or not has_content(cur, cid, 'book_content')
-            if need_book:
-                book = llm_service.generate_picture_book(title, grade)
-                if book and '生成失败' not in str(book.get('pages', [{}])[0].get('text', '')):
-                    cur.execute('UPDATE ai_courses SET book_content=%s WHERE id=%s',
-                                (json.dumps(book, ensure_ascii=False), cid))
-                    conn.commit()
-                    book_ok += 1
-                    print(f'    book ok ({len(book.get("pages", []))} pages)', flush=True)
-                else:
-                    book_fail += 1
-                    print('    book FAILED', flush=True)
-                time.sleep(0.8)
-            else:
-                print('    book already cached, skip', flush=True)
-                book_ok += 1
+            print('    book 已切换为照片绘本，跳过 AI 生成（照片请放到 frontend/public/images/picture_books/<课程名>/）', flush=True)
+            book_ok += 1
 
         print('', flush=True)
 
