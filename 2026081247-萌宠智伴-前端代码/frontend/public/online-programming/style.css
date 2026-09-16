@@ -25,3 +25,223 @@
 .course-item[role=button]{cursor:pointer}.course-item[role=button]:focus-visible{outline:2px solid #ffb33e;outline-offset:2px}.course-item[role=button]:not(.current):hover{background:#fffbf4}
 
 body{background:#fff}main.embedded-main{margin:0;max-width:none;padding:24px}.course-header{margin-top:0}@media(max-width:650px){main.embedded-main{padding:16px}}
+
+/* Fit the embedded lesson to the available learning panel. */
+html, body { height: 100%; overflow: hidden; }
+main.embedded-main {
+  height: 100%; height: 100dvh; min-height: 0; padding: 14px 18px 10px;
+  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; gap: 10px;
+}
+.embedded-main .course-header { margin: 0; gap: 16px; min-width: 0; }
+.course-header > div:first-child { min-width: 0; }
+.embedded-main h1 { font-size: clamp(18px, 2vw, 24px); margin: 4px 0 6px; line-height: 1.3; }
+.embedded-main .course-header p { line-height: 1.5; }
+.embedded-main .progress-card { flex-shrink: 0; width: 180px; padding: 10px 14px; }
+.embedded-main .progress-track { margin: 8px 0; }
+.embedded-main .task-tabs { margin: 0; gap: 8px; }
+.embedded-main .task-tab { padding: 8px 10px; gap: 8px; min-width: 0; }
+.embedded-main .workspace {
+  min-height: 0; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.6fr);
+  border-radius: 12px; box-shadow: 0 3px 14px #77512108;
+}
+.problem-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.embedded-main .panel-heading, .embedded-main .editor-toolbar { height: 38px; flex-shrink: 0; padding: 0 16px; }
+.embedded-main .problem-content { flex: 1; min-height: 0; max-height: none; padding: 16px; overflow: auto; }
+.embedded-main h2 { font-size: 18px; margin: 10px 0 14px; }
+.embedded-main h3 { margin: 18px 0 8px; }
+.embedded-main .goal { padding: 10px 12px; }
+.embedded-main details { padding: 10px; margin-top: 8px; }
+.coding-panel {
+  display: grid; min-height: 0; min-width: 0;
+  grid-template-rows: 38px minmax(70px, 1.6fr) auto auto minmax(55px, 1fr) auto;
+}
+.embedded-main .editor { height: auto; min-height: 0; padding: 10px 0; overflow: hidden; }
+.embedded-main #code { min-width: 0; min-height: 0; font-size: 13px; line-height: 22px; }
+.embedded-main .line-numbers { line-height: 22px; width: 40px; padding-right: 12px; }
+.embedded-main .editor-footer { padding: 6px 14px; gap: 8px; }
+.embedded-main .input-section { padding: 8px 14px; }
+.embedded-main .input-section label { margin-bottom: 5px; }
+.embedded-main .input-row { gap: 10px; }
+.embedded-main #input { height: 42px; min-height: 0; resize: none; padding: 5px 10px; }
+.embedded-main .run-button { padding: 10px 14px; }
+.embedded-main .result-section { min-height: 0; padding: 10px 14px; overflow: auto; }
+.embedded-main .result-heading { position: sticky; top: -10px; background: white; padding: 3px 0 6px; gap: 8px; }
+.embedded-main .result-section pre { max-height: none; overflow: visible; margin: 5px 0 8px; line-height: 1.6; }
+.embedded-main .test-summary { padding: 7px 10px; }
+.embedded-main .tutor-entry { padding: 8px 14px; gap: 8px; }
+.embedded-main .tutor-entry p { margin: 3px 0 0; }
+.embedded-main .secondary-button { padding: 7px 12px; }
+.embedded-main .lesson-footer { margin: 0; gap: 12px; }
+.embedded-main .lesson-footer > div { gap: 8px; }
+.embedded-main .prototype-note { margin: 0; font-size: 10px; line-height: 1.4; }
+.problem-content, .result-section, #code, #input { scrollbar-width: thin; scrollbar-color: #dccbb1 transparent; }
+@media (max-height: 650px) {
+  main.embedded-main { padding: 10px 12px 8px; gap: 7px; }
+  .embedded-main .eyebrow, .embedded-main .progress-card small, .embedded-main .tutor-entry p { display: none; }
+  .embedded-main .progress-card { padding: 8px 12px; }
+  .embedded-main .task-tab { padding: 5px 8px; }
+  .embedded-main .task-number { width: 23px; height: 23px; }
+}
+@media (max-width: 650px) {
+  main.embedded-main { padding: 8px; gap: 6px; }
+  .embedded-main .course-header { display: flex; gap: 8px; }
+  .embedded-main .course-header p, .embedded-main .eyebrow { display: none; }
+  .embedded-main .progress-card { margin: 0; width: 125px; padding: 8px; }
+  .embedded-main .task-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+  .embedded-main .task-tab { padding: 6px 4px; font-size: 11px; gap: 4px; }
+  .embedded-main .task-number { display: none; }
+  .embedded-main .workspace { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); }
+  .embedded-main .problem-panel { border-right: 1px solid #eee3d2; }
+  .embedded-main .problem-content { padding: 10px; }
+  .embedded-main .panel-heading, .embedded-main .editor-toolbar { padding: 0 8px; }
+  .embedded-main .label, .embedded-main .language, .embedded-main .input-section label span,
+  .embedded-main .lesson-footer > span, .embedded-main .tutor-entry > div { display: none; }
+  .embedded-main .lesson-footer { justify-content: flex-end; }
+  .embedded-main .input-row { gap: 5px; }
+  .embedded-main .run-button { padding: 8px; font-size: 11px; }
+}
+
+/* Emphasize lesson navigation. */
+.embedded-main .lesson-footer .secondary-button {
+  background: #ffcc63;
+  border-color: #f3b53d;
+  color: #694515;
+  font-weight: 600;
+  box-shadow: 0 2px 5px rgba(202, 142, 39, 0.12);
+}
+.embedded-main .lesson-footer .secondary-button:hover:not(:disabled) {
+  background: #ffbd40;
+  border-color: #e6a127;
+}
+.embedded-main .lesson-footer .secondary-button:disabled {
+  background: #fff0cd;
+  border-color: #f2e3c1;
+  color: #aa9771;
+  box-shadow: none;
+  opacity: 1;
+}
+
+/* Readable lesson typography, with more room for writing code. */
+.embedded-main .workspace {
+  grid-template-columns: clamp(290px, 29%, 460px) minmax(0, 1fr);
+}
+.embedded-main .problem-panel { background: #fffefd; }
+.embedded-main .problem-content { padding: 18px 20px; }
+.embedded-main .panel-heading {
+  font-size: 15px; color: #343c46; background: #faf7f1;
+}
+.embedded-main .label { font-size: 12px; color: #756959; }
+.embedded-main .problem-content h2 {
+  font-size: 22px; line-height: 1.45; color: #2f3742;
+  margin: 12px 0 16px; letter-spacing: 0.2px;
+}
+.embedded-main .problem-content h3 {
+  font-size: 15px; color: #343c46; margin: 20px 0 10px;
+}
+.embedded-main .problem-content p,
+.embedded-main .problem-content li {
+  font-size: 16px; line-height: 1.85; color: #4c535b;
+}
+.embedded-main .problem-content p { margin: 8px 0; }
+.embedded-main .problem-content ul { margin: 8px 0; padding-left: 21px; }
+.embedded-main .problem-content li + li { margin-top: 5px; }
+.embedded-main .task-meta { font-size: 12px; color: #756959; flex-wrap: wrap; }
+.embedded-main .difficulty { font-size: 12px; }
+.embedded-main .goal {
+  font-size: 15px; line-height: 1.8; color: #745225;
+  padding: 12px 14px; background: #fff5e2; border-left-color: #efb34d;
+}
+.embedded-main .example { padding: 12px 14px; background: #faf8f4; }
+.embedded-main .example small { font-size: 12px; color: #746857; }
+.embedded-main .example pre { font-size: 16px; line-height: 1.65; color: #39434e; }
+.embedded-main details { padding: 11px 12px; background: white; }
+.embedded-main summary { font-size: 14px; line-height: 1.5; color: #79531e; }
+.embedded-main .course-header p { font-size: 14px; color: #68707a; }
+.embedded-main .task-tab { font-size: 14px; color: #655e53; }
+.embedded-main .task-tab[aria-selected=true] { color: #744b12; font-weight: 600; }
+.embedded-main .task-tab small { font-size: 14px; font-weight: 600; line-height: 1.4; white-space: nowrap; }
+.embedded-main .task-number { font-size: 12px; }
+.embedded-main .editor-toolbar { font-size: 14px; color: #414a54; }
+.embedded-main .text-button { font-size: 12px; color: #745b36; }
+.embedded-main .language { font-size: 11px; }
+.embedded-main .editor { background: #fffdf9; padding: 14px 0; }
+.embedded-main #code {
+  font-family: Consolas, 'Cascadia Code', monospace;
+  font-size: 16px; line-height: 27px; color: #35414f;
+}
+.embedded-main .line-numbers { font-size: 14px; line-height: 27px; color: #8d8272; width: 48px; }
+.embedded-main .editor-footer { font-size: 11px; color: #756959; }
+.embedded-main .input-section label,
+.embedded-main .result-heading { font-size: 14px; color: #3e4854; }
+.embedded-main .input-section label span,
+.embedded-main .result-heading span { font-size: 12px; color: #746959; }
+.embedded-main #input { font-size: 15px; line-height: 22px; color: #35414f; }
+.embedded-main .result-section pre { font-size: 15px; color: #4c535b; }
+.embedded-main .test-summary { font-size: 14px; }
+.embedded-main .test-details { font-size: 13px; }
+.embedded-main .run-button,
+.embedded-main .secondary-button { font-size: 14px; }
+.embedded-main .tutor-entry strong { font-size: 14px; }
+.embedded-main .tutor-entry p { font-size: 12px; color: #746959; }
+.embedded-main .lesson-footer { font-size: 12px; }
+@media (max-width: 950px) {
+  .embedded-main .workspace { grid-template-columns: minmax(240px, 34%) minmax(0, 1fr); }
+  .embedded-main .problem-content { padding: 14px; }
+  .embedded-main .editor-footer span:last-child { display: none; }
+}
+@media (max-width: 650px) {
+  .embedded-main .workspace { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); }
+  .embedded-main .problem-content { padding: 10px; }
+  .embedded-main .task-tab { font-size: 12px; }
+  .embedded-main .problem-content p, .embedded-main .problem-content li { font-size: 14px; }
+  .embedded-main #code { font-size: 14px; line-height: 24px; }
+  .embedded-main .line-numbers { line-height: 24px; width: 30px; padding-right: 8px; }
+  .embedded-main .input-section, .embedded-main .result-section { padding-left: 8px; padding-right: 8px; }
+}
+
+/* Larger text throughout the task instructions. */
+.embedded-main .problem-panel .panel-heading { font-size: 18px; }
+.embedded-main .problem-content h2 { font-size: 25px; }
+.embedded-main .problem-content h3 { font-size: 18px; }
+.embedded-main .problem-content p,
+.embedded-main .problem-content li { font-size: 18px; line-height: 1.85; }
+.embedded-main .problem-content .task-meta,
+.embedded-main .problem-content .difficulty { font-size: 14px; }
+.embedded-main .problem-content .goal { font-size: 18px; }
+.embedded-main .problem-content .example small { font-size: 15px; }
+.embedded-main .problem-content .example pre { font-size: 18px; }
+.embedded-main .problem-content details,
+.embedded-main .problem-content summary { font-size: 17px; }
+
+/* Keep the lesson focused on instructions and actions. */
+main.embedded-main { grid-template-rows: auto auto minmax(0, 1fr) auto; position: relative; }
+.embedded-main h1 { margin: 0; }
+.embedded-main .progress-card { padding: 10px 14px; }
+.embedded-main .progress-track { margin: 8px 0 0; }
+.embedded-main .lesson-footer { justify-content: flex-end; }
+.embedded-main .prototype-note { position: absolute; bottom: 16px; left: 18px; max-width: 45%; font-size: 12px; }
+.embedded-main .prototype-note[hidden] { display: none; }
+.embedded-main .task-tab { font-size: 16px; }
+.embedded-main .tutor-entry { padding-top: 10px; padding-bottom: 10px; }
+
+/* Compact instructions without clipping text or hiding expanded hints. */
+.embedded-main .problem-content { padding: 12px 16px; }
+.embedded-main .problem-content h2 { font-size: 22px; line-height: 1.35; margin: 7px 0 10px; }
+.embedded-main .problem-content h3 { font-size: 16px; margin: 12px 0 6px; }
+.embedded-main .problem-content p,
+.embedded-main .problem-content li { font-size: 16px; line-height: 1.6; }
+.embedded-main .problem-content p { margin: 5px 0; }
+.embedded-main .problem-content ul { margin: 5px 0; }
+.embedded-main .problem-content li + li { margin-top: 2px; }
+.embedded-main .problem-content .goal { font-size: 16px; line-height: 1.6; padding: 8px 10px; }
+.embedded-main .problem-content .task-meta,
+.embedded-main .problem-content .difficulty { font-size: 13px; }
+.embedded-main .problem-content .example {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px; padding: 9px 12px;
+}
+.embedded-main .problem-content .example > div + div { border-left: 1px solid #e9dfd1; padding-left: 12px; }
+.embedded-main .problem-content .example small { font-size: 13px; margin-bottom: 4px; }
+.embedded-main .problem-content .example pre { font-size: 16px; line-height: 1.5; overflow-wrap: anywhere; }
+.embedded-main .problem-content details { padding: 7px 10px; margin-top: 6px; }
+.embedded-main .problem-content summary { font-size: 15px; line-height: 1.4; }

@@ -64,3 +64,10 @@
 }
 .lesson-page-dots button:hover { background: #efcfaa; }
 .lesson-page-dots button.active { width: 20px; border-radius: 5px; background: #f5a623; }
+
+.lesson-pagination { min-height: 44px; padding-top: 8px; gap: 10px; }
+.lesson-pagination > button,
+.lesson-pagination > .lesson-next { background: #ffcc63; border-color: #f3b53d; color: #694515; font-weight: 600; border-radius: 8px; }
+.lesson-pagination > button:hover:not(:disabled),
+.lesson-pagination > .lesson-next:hover:not(:disabled) { background: #ffbd40; border-color: #e6a127; color: #694515; }
+.lesson-pagination > button:disabled { background: #fff0cd; border-color: #f2e3c1; color: #aa9771; }
