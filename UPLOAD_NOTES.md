@@ -1,6 +1,6 @@
 # 完整项目备份
 
-此目录包含 aupet-new 的当前源代码、前端素材、项目文档，以及 aupet 的在线编程原型和整合代码（online-programming-prototype）。
+此目录包含 aupet-new 的当前源代码、前端素材、项目文档，以及 aupet 的在线编程整合代码（前端 frontend/public/online-programming 与 OnlineProgrammingLesson.vue，后端 /api/student/ai/programming-tutor；原独立原型目录已并入后移除）。
 
 数据库文件：
 

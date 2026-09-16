@@ -1,1 +1,0 @@
-const fs=require('fs');let app=fs.readFileSync('D:/GITHUB/aupet-new/backend/app.py','utf8');const marker=app.indexOf("if __name__ == '__main__':");if(marker<0)throw Error('Backend entry point not found');app=app.slice(0,marker)+fs.readFileSync('integration/tutor-route.py','utf8')+'\n'+app.slice(marker);fs.writeFileSync('integration/app.py',app);
