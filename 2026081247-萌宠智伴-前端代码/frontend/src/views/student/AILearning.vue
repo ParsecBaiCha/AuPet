@@ -3,9 +3,11 @@ import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useUserStore } from '../../stores/user'
 import { studentApi } from '../../api/student'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DEFAULT_PET_IMAGE, DEFAULT_STUDENT_AVATAR, setImageFallback } from '../../utils/images'
+import { DEFAULT_STUDENT_AVATAR, setImageFallback } from '../../utils/images'
 import DeepLearningLesson from './DeepLearningLesson.vue'
 import OnlineProgrammingLesson from './OnlineProgrammingLesson.vue'
+import xiaozhiAvatar from '../../../../../2026081247-萌宠智伴-前端素材/头像素材/xiaozhi.png'
+import zhixingAvatar from '../../../../../2026081247-萌宠智伴-前端素材/头像素材/zhixing.png'
 
 const userStore = useUserStore()
 const coursePanelCollapsed = ref(false)
@@ -13,6 +15,12 @@ const coursePanelCollapsed = ref(false)
 // ===== 年级选择 =====
 const grade = ref('upper_primary')
 const gradeName = ref('小学高年级')
+const isSeniorTeacher = computed(() => ['middle_school', 'high_school'].includes(grade.value))
+const teacherName = computed(() => isSeniorTeacher.value ? '知行老师' : '小知老师')
+const teacherAvatar = computed(() => isSeniorTeacher.value ? zhixingAvatar : xiaozhiAvatar)
+const teacherWelcome = computed(() => isSeniorTeacher.value
+  ? '你好，我是知行老师。我们从一个问题开始，一起理解它，再动手验证。'
+  : '你好呀，我是小知老师！今天我们一起发现 AI 的小秘密。')
 const gradeOptions = [
   { value: 'lower_primary', label: '小学低年级(1-3年级)' },
   { value: 'upper_primary', label: '小学高年级(4-6年级)' },
@@ -27,6 +35,10 @@ const changeGrade = async (g: string) => {
     gradeName.value = gradeOptions.find(o => o.value === g)?.label || '小学高年级'
     ElMessage.success(`已切换到${gradeName.value}`)
     loadCourses()
+    // 课程表随学段变化，旧路径作废，强制按新学段重新生成（丢弃仍在路上的旧请求）
+    learningPath.value = null
+    pathFetchedAt = 0
+    fetchLearningPath(true)
   } catch (e) { /* ignore */ }
 }
 
@@ -66,11 +78,14 @@ const selectCourse = (c: any) => {
 
 // 切换课程时，AI主动给出该课程的学习引导语
 const guideLoading = ref(false)
+let guideRequest = 0
 const loadCourseGuide = async (c: any) => {
-  if (guideLoading.value || !c?.id) return
+  if (!c?.id) return
+  const requestId = ++guideRequest
   guideLoading.value = true
   try {
     const data: any = await studentApi.getCourseGuide(c.id, c.title)
+    if (requestId !== guideRequest || selectedCourse.value?.id !== c.id) return
     if (data?.reply) {
       chatMessages.value.push({
         id: Date.now() + 1,
@@ -81,7 +96,7 @@ const loadCourseGuide = async (c: any) => {
       scrollChat()
     }
   } catch (e) { /* 引导生成失败不影响使用 */ } finally {
-    guideLoading.value = false
+    if (requestId === guideRequest) guideLoading.value = false
   }
 }
 
@@ -257,7 +272,7 @@ const clearChat = async () => {
     chatMessages.value = [{
             id: 0,
             type: 'assistant',
-            content: '很高兴又能和你聊天了！今天有什么困惑吗？我来帮帮你！',
+            content: teacherWelcome.value,
             time: nowTime(),
           }]
   } catch (e) { /* cancelled */ }
@@ -265,6 +280,211 @@ const clearChat = async () => {
 
 // ===== 游戏化练习 (闯关模式) =====
 const quizQuestions = ref<any[]>([])
+const supportMessage = ref('')
+const helpSending = ref(false)
+
+// 「卡住了」：带着当前专题跳到小知老师 / 知行老师对话（按学段自动切换）
+const askTeacherForStuck = async () => {
+  if (helpSending.value || chatSending.value) return
+  helpSending.value = true
+  try {
+    // 同步一条学习支持提醒给真人老师，方便课后跟进
+    await studentApi.requestLearningHelp('study')
+  } catch (e) { /* 提醒老师失败不影响去找 AI 老师 */ }
+  // 记下正在做的这道题：学生答完后请他评一下难度
+  const cur = quizQuestions.value[quizCurrentIdx.value]
+  stuckQuestion.value = (quizStage.value === 'playing' && cur)
+    ? { idx: quizCurrentIdx.value, topic: selectedTopic.value || '', question: cur.question || '' }
+    : null
+  activeTab.value = 'chat'
+  await nextTick()
+  chatInput.value = selectedTopic.value
+    ? `老师，我在「${selectedTopic.value}」这里卡住了，能给我一点提示吗？`
+    : '老师，我在这里卡住了，能给我一点提示吗？'
+  helpSending.value = false
+  await sendChat()
+}
+
+// ===== 「休息一下」：先问要不要暂存进度，再安心休息 =====
+const savedQuizProgress = ref<any>(null)
+// 按登录学生区分暂存内容，避免多人共用设备时互相串进度
+const quizProgressKey = () => {
+  let who = ''
+  try {
+    const raw = localStorage.getItem('pet-education-storage')
+    const u = raw ? JSON.parse(raw)?.user : null
+    who = String(u?.id ?? u?.username ?? '')
+  } catch (e) { /* ignore */ }
+  return `ai-quiz-progress:${who || userStore.studentInfo.name || 'me'}`
+}
+const quizProgressing = computed(() =>
+  quizStage.value === 'playing' && quizQuestions.value.length > 0 && quizAnsweredFlags.value.some(Boolean))
+const savedProgressLabel = computed(() => {
+  const s = savedQuizProgress.value
+  if (!s || !Array.isArray(s.questions) || !s.questions.length) return ''
+  const cur = Math.min(Number(s.currentIdx || 0) + 1, s.questions.length)
+  return `第 ${cur} / ${s.questions.length} 关`
+})
+
+// 本地缓存只作离线兜底，真正的进度以后端为准
+const readLocalProgress = () => {
+  try {
+    const raw = localStorage.getItem(quizProgressKey())
+    return raw ? JSON.parse(raw) : null
+  } catch (e) { return null }
+}
+const writeLocalProgress = (snapshot: any) => {
+  try {
+    if (snapshot) localStorage.setItem(quizProgressKey(), JSON.stringify(snapshot))
+    else localStorage.removeItem(quizProgressKey())
+  } catch (e) { /* ignore */ }
+}
+const isUsableProgress = (s: any) =>
+  !!s && Array.isArray(s.questions) && s.questions.length > 0
+
+// 读取暂存进度：后端优先，这样换设备/换浏览器也能接着做；请求失败才退回本地缓存
+const loadSavedQuizProgress = async () => {
+  try {
+    const res: any = await studentApi.getQuizProgress()
+    const remote = res?.progress
+    if (isUsableProgress(remote)) {
+      savedQuizProgress.value = remote
+      writeLocalProgress(remote)
+      return
+    }
+    // 后端没有有效进度：同步清掉本地残留，避免显示一条"已经不存在"的旧进度
+    savedQuizProgress.value = null
+    writeLocalProgress(null)
+  } catch (e) {
+    savedQuizProgress.value = readLocalProgress()
+  }
+}
+
+const clearSavedQuizProgress = async () => {
+  savedQuizProgress.value = null
+  writeLocalProgress(null)
+  try { await studentApi.clearQuizProgress() } catch (e) { /* 清不掉不影响继续答题 */ }
+}
+
+const stashQuizProgress = async () => {
+  const snapshot = {
+    courseId: selectedCourse.value?.id || null,
+    topic: selectedTopic.value || selectedCourse.value?.title || '',
+    questions: quizQuestions.value,
+    answers: quizAnswers.value,
+    answeredFlags: quizAnsweredFlags.value,
+    currentIdx: quizCurrentIdx.value,
+    correctCount: quizCorrectCount.value,
+    savedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
+  }
+  savedQuizProgress.value = snapshot
+  writeLocalProgress(snapshot)
+  try {
+    await studentApi.saveQuizProgress(snapshot)
+    return true
+  } catch (e) {
+    return false
+  }
+}
+
+const takeRest = async () => {
+  const total = quizQuestions.value.length
+  const answered = quizAnsweredFlags.value.filter(Boolean).length
+  const keep = quizProgressing.value
+  const tip = keep
+    ? `这次「${selectedTopic.value || '云笺小试'}」还有 ${Math.max(total - answered, 0)} 关没做完，休息前要不要先把进度存下来？存好后下次回来点「继续上次进度」就能接着做。`
+    : '现在还没有正在进行的闯关。要不要先休息一会儿，等状态好了再来？'
+  try {
+    await ElMessageBox.confirm(tip, '休息一下', {
+      confirmButtonText: keep ? '保存进度并休息' : '去休息',
+      cancelButtonText: '继续练习',
+      type: 'info',
+      closeOnClickModal: false,
+    })
+  } catch (e) { return }
+  if (keep) {
+    const synced = await stashQuizProgress()
+    ElMessage.success(synced
+      ? '进度已保存，下次在任意设备登录都能点「继续上次进度」接着做'
+      : '进度已存在本机，联网后会自动同步')
+  } else {
+    ElMessage.success('好呀，休息好了再来闯关')
+  }
+}
+
+const resumeQuizProgress = () => {
+  const s = savedQuizProgress.value
+  if (!s || !Array.isArray(s.questions) || !s.questions.length) { clearSavedQuizProgress(); return }
+  if (s.courseId) {
+    const c = courses.value.find((x: any) => x.id === s.courseId)
+    if (c) selectedCourse.value = c
+  }
+  selectedTopic.value = s.topic || selectedCourse.value?.title || ''
+  quizQuestions.value = s.questions
+  quizAnswers.value = (Array.isArray(s.answers) && s.answers.length === s.questions.length)
+    ? s.answers : new Array(s.questions.length).fill(-1)
+  quizAnsweredFlags.value = (Array.isArray(s.answeredFlags) && s.answeredFlags.length === s.questions.length)
+    ? s.answeredFlags : new Array(s.questions.length).fill(false)
+  quizCurrentIdx.value = Math.min(Math.max(Number(s.currentIdx) || 0, 0), s.questions.length - 1)
+  quizCorrectCount.value = Number(s.correctCount) || 0
+  quizFeedback.value = 'none'
+  quizResult.value = null
+  quizStage.value = 'playing'
+  ElMessage.success('已恢复上次的进度，接着往下闯吧')
+}
+
+// ===== 难题反馈：请教过老师之后，学生做完这题给个难度评价 =====
+const stuckQuestion = ref<{ idx: number; topic: string; question: string } | null>(null)
+const ratingOpen = ref(false)
+const ratingStars = ref(0)
+const ratingTags = ref<string[]>([])
+const ratingSource = ref<{ topic: string; question: string }>({ topic: '', question: '' })
+const rateTagOptions = [
+  '一下就懂了',
+  '差一点，提示后想通了',
+  '之前没想到这个思路',
+  '确实有点难，还想再练一遍',
+  '这题我还没太明白',
+]
+const ratingStarText = computed(() =>
+  ['', '很简单', '比较简单', '一般', '有点难', '非常难'][ratingStars.value] || '')
+const openRating = (q: { topic: string; question: string }) => {
+  ratingSource.value = { topic: q.topic, question: q.question }
+  ratingStars.value = 0
+  ratingTags.value = []
+  ratingOpen.value = true
+}
+const toggleRateTag = (t: string) => {
+  const i = ratingTags.value.indexOf(t)
+  if (i >= 0) ratingTags.value.splice(i, 1)
+  else ratingTags.value.push(t)
+}
+const closeRating = () => { ratingOpen.value = false }
+const ratingThanks = () => {
+  const s = ratingStars.value
+  if (s <= 2) return '收到啦，这题对你不算难，下次给你加点小挑战～'
+  if (s === 3) return '记下了，这题难度刚刚好，保持这个节奏！'
+  if (s === 4) return '谢谢你的反馈，这题确实有点挑战，慢慢来就好～'
+  return '难一点也没关系，我们一起把它啃下来，你已经很努力啦！'
+}
+const submitRating = async () => {
+  if (!ratingStars.value) { ElMessage.warning('先给这题打个难度分吧～'); return }
+  // 评价直接写后端（教师干预页要读它），本地不再留副本，避免两份数据对不上
+  let synced = true
+  try {
+    await studentApi.submitQuizRating({
+      topic: ratingSource.value.topic,
+      question: ratingSource.value.question,
+      stars: ratingStars.value,
+      tags: [...ratingTags.value],
+    })
+  } catch (e) {
+    synced = false
+  }
+  ratingOpen.value = false
+  if (synced) ElMessage.success(ratingThanks())
+  else ElMessage.warning('网络不太顺，这条评价没交上去，过会儿再试一次吧～')
+}
 const quizAnswers = ref<number[]>([])
 const quizResult = ref<any>(null)
 const quizLoading = ref(false)
@@ -287,6 +507,7 @@ const generateQuiz = async () => {
   try {
     const data: any = await studentApi.generateQuiz({ topic, count: 3, courseId: selectedCourse.value?.id, group })
     quizQuestions.value = data?.questions || []
+    supportMessage.value = data?.supportMessage || ''
     quizAnswers.value = new Array(quizQuestions.value.length).fill(-1)
     quizAnsweredFlags.value = new Array(quizQuestions.value.length).fill(false)
     // 有预生成多组题库时，自动预取下一组，点"换一组题"即刻切换
@@ -294,6 +515,9 @@ const generateQuiz = async () => {
     quizGroup.value = total > 1 ? (group + 1) % total : 0
     if (quizQuestions.value.length > 0) {
       quizStage.value = 'playing'
+      // 重新开一关时，旧的暂存进度不再保留
+      clearSavedQuizProgress()
+      stuckQuestion.value = null
     } else {
       ElMessage.warning('题目生成失败，请重试')
     }
@@ -308,6 +532,12 @@ const answerQuestion = (qIdx: number, aIdx: number) => {
   if (quizAnsweredFlags.value[qIdx]) return
   quizAnswers.value[qIdx] = aIdx
   quizAnsweredFlags.value[qIdx] = true
+  // 请教过老师的这道题，答完后请学生评价一下难度
+  const stuck = stuckQuestion.value
+  if (stuck && stuck.idx === qIdx) {
+    stuckQuestion.value = null
+    setTimeout(() => openRating({ topic: stuck.topic, question: stuck.question }), 1500)
+  }
   const isCorrect = aIdx === quizQuestions.value[qIdx].answer
   if (isCorrect) {
     quizCorrectCount.value++
@@ -334,7 +564,10 @@ const finishQuiz = async () => {
       courseId: selectedCourse.value?.id,
     })
     quizResult.value = result
+    if (result.supportMessage) supportMessage.value = result.supportMessage
     quizStage.value = 'finished'
+    // 本轮已闯关完成，暂存的进度可以清掉
+    clearSavedQuizProgress()
     if (result.correct > 0) {
       ElMessage.success(`答对${result.correct}题，获得${result.correct * 3}积分奖励！`)
     }
@@ -358,6 +591,8 @@ const resetQuiz = () => {
   quizFeedback.value = 'none'
   quizAnsweredFlags.value = []
   quizGroup.value = 0
+  stuckQuestion.value = null
+  ratingOpen.value = false
 }
 
 // ===== 动画讲解（内置视频） =====
@@ -853,22 +1088,84 @@ const loadTeacherMaterials = async () => {
 // ===== 学习路径 =====
 const learningPath = ref<any>(null)
 const pathLoading = ref(false)
+// 记录上次生成时间，用于判断要不要重新生成（避免每次切页都等大模型）
+let pathFetchedAt = 0
+// 同一个请求只发一次：预加载与学生切页共用，避免重复调用大模型
+let pathInflight: Promise<void> | null = null
+// 请求序号：切学段后旧请求可能还在路上，用它把过期结果丢掉
+let pathReqSeq = 0
+
+const fetchLearningPath = (force = false): Promise<void> => {
+  if (pathInflight && !force) return pathInflight
+  const seq = ++pathReqSeq
+  const task = (async () => {
+    try {
+      const data: any = await studentApi.getLearningPath()
+      // 只认最后一次请求的结果，避免切换学段时旧数据覆盖新学段
+      if (seq !== pathReqSeq) return
+      learningPath.value = data
+      pathFetchedAt = Date.now()
+    } catch (e) {
+      // 静默失败：保留旧数据，下次切页会自动重试
+    } finally {
+      // 只有最新那次请求负责清空，被取代的旧请求不要去动新请求的状态
+      if (seq === pathReqSeq) pathInflight = null
+    }
+  })()
+  pathInflight = task
+  return task
+}
+
+// 进页面就提前在后台生成，学生点「学习路径」时直接出结果
+const prefetchLearningPath = () => { fetchLearningPath() }
 
 const loadLearningPath = async () => {
-  pathLoading.value = true
+  // 已有数据时静默刷新：只更新数字，不整页闪 loading
+  pathLoading.value = !learningPath.value
   try {
-    const data: any = await studentApi.getLearningPath()
-    learningPath.value = data
+    await fetchLearningPath()
   } catch (e) {
-    ElMessage.error('学习路径加载失败')
+    if (!learningPath.value) ElMessage.error('学习路径加载失败')
   } finally {
     pathLoading.value = false
   }
 }
 
+// 学习路径的展示派生数据
+const pathSummary = computed<any>(() => learningPath.value?.summary || {})
+const pathNode = computed<any>(() => learningPath.value?.nextNode || null)
+const recentScoresText = computed(() => {
+  const list = learningPath.value?.recentScores || []
+  return list.length ? list.map((s: number) => s + ' 分').join('、') : '暂无'
+})
+const statusText = (status: string) =>
+  status === 'mastered' ? '已掌握' : status === 'learning' ? '学习中' : '未开始'
+const actionText = (status: string) =>
+  status === 'mastered' ? '去复习' : status === 'learning' ? '继续学' : '去学习'
+const difficultyText = (difficulty: string) =>
+  difficulty === 'easy' ? '入门' : difficulty === 'medium' ? '进阶' : '挑战'
+const typeBarWidth = (count: number) => {
+  const list = learningPath.value?.typeBreakdown || []
+  const max = Math.max(...list.map((t: any) => Number(t.count) || 0), 1)
+  return Math.round(((Number(count) || 0) / max) * 100) + '%'
+}
+// 从学习路径跳到具体课程：优先按 courseId 精准命中左侧课程列表，避免"推荐了却找不到课"
+const openTopicInChat = (topic: string, courseId?: number) => {
+  if (!topic) return
+  const hit = courses.value.find((c: any) =>
+    (courseId && c.id === courseId) || c.title === topic)
+  if (hit) selectCourse(hit)
+  else selectedTopic.value = topic
+  activeTab.value = 'chat'
+}
+
 // ===== 切换标签时加载数据 =====
-watch(activeTab, (tab) => {
-  if (tab === 'path' && !learningPath.value) loadLearningPath()
+watch(activeTab, async (tab) => {
+  // 学习路径已在进页面时预生成：有数据就立刻展示；
+  // 只有数据缺失或超过 60 秒才在后台重新生成，学生在别处学完回来能看到最新进度
+  if (tab === 'path' && (!learningPath.value || Date.now() - pathFetchedAt > 60000)) {
+    loadLearningPath()
+  }
   if (tab === 'book' && grade.value !== 'high_school') {
     loadFavoriteList()
     // 课程已有预生成绘本时，进入即直接播放，无需点击生成
@@ -881,7 +1178,9 @@ watch(activeTab, (tab) => {
     else loadTeacherMaterials()
   }
   if (tab === 'quiz' && quizStage.value === 'idle') {
-    if (ensureCourseSelected()) generateQuiz()
+    // 先取暂存进度（后端优先，换设备也能续），再让同学自己选：继续上次 / 重新开始
+    await loadSavedQuizProgress()
+    if (!savedQuizProgress.value && ensureCourseSelected()) generateQuiz()
   }
   })
 
@@ -937,8 +1236,14 @@ onMounted(async () => {
     }
   } catch (e) { /* ignore */ }
 
+  // 提前在后台生成学习路径，学生点「学习路径」时无需等待大模型（不阻塞下面加载）
+  prefetchLearningPath()
+
   // 加载课程
   await loadCourses()
+
+  // 暂存的答题进度不在这里读：进入「云笺小试」时才拉取（见 activeTab 的 watch），
+  // 免得每次进页面都多发一个请求、还挡住后面的聊天记录加载。
 
   // 加载聊天历史
   try {
@@ -955,7 +1260,7 @@ onMounted(async () => {
       chatMessages.value = [{
   id: 0,
   type: 'assistant',
-  content: '很高兴又能和你聊天了！今天有什么困惑吗？我来帮帮你！',
+  content: teacherWelcome.value,
   time: nowTime(),
   }]
     }
@@ -963,18 +1268,12 @@ onMounted(async () => {
     chatMessages.value = [{
   id: 0,
   type: 'assistant',
-  content: '很高兴又能和你聊天了！今天有什么困惑吗？我来帮帮你！',
+  content: teacherWelcome.value,
   time: nowTime(),
   }]
   }
 
-  // 确保宠物信息
-  if (!userStore.petInfo.name) {
-    try {
-      const dash: any = await studentApi.getDashboard()
-      if (dash) userStore.applyDashboard(dash)
-    } catch (e) { /* ignore */ }
-  }
+
 })
 </script>
 
@@ -1043,12 +1342,16 @@ onMounted(async () => {
       <!-- 对话 -->
       <div v-if="activeTab === 'chat'" class="tab-content chat-tab">
         <!-- 聊天管理工具栏 -->
+        <div class="teacher-intro" :class="{ senior: isSeniorTeacher }">
+          <img :src="teacherAvatar" :alt="teacherName" />
+          <div><h3>{{ teacherName }}</h3><p>{{ teacherWelcome }}</p></div>
+        </div>
         <div class="chat-toolbar">
           <span class="chat-toolbar-info" v-if="selectedTopic">
             当前专题：{{ selectedTopic }}
           </span>
           <span class="chat-toolbar-info" v-else>
-            AI学习伙伴 - 随时为你解答
+            {{ teacherName }} · AI 通识课导师
           </span>
           <div class="chat-toolbar-actions">
             <button class="tool-btn clear-btn" @click="clearChat" title="清空当前聊天记录">
@@ -1061,9 +1364,10 @@ onMounted(async () => {
                class="chat-msg"
                :class="msg.type === 'user' ? 'msg-user' : 'msg-ai'">
             <img v-if="msg.type === 'assistant'" class="chat-avatar"
-                 :src="userStore.petInfo.type || DEFAULT_PET_IMAGE"
-                 @error="setImageFallback($event, DEFAULT_PET_IMAGE)" />
+                 :src="teacherAvatar"
+                 @error="setImageFallback($event, teacherAvatar)" />
             <div class="chat-bubble-wrap">
+              <span v-if="msg.type === 'assistant'" class="teacher-speaker">{{ teacherName }}</span>
               <!-- 正常显示 -->
               <div v-if="editingMsgId !== msg.id" class="chat-bubble">
                 <div class="bubble-content">{{ msg.content }}</div>
@@ -1096,7 +1400,7 @@ onMounted(async () => {
                  @error="setImageFallback($event, DEFAULT_STUDENT_AVATAR)" />
           </div>
           <div v-if="chatSending" class="chat-msg msg-ai">
-            <img class="chat-avatar" :src="userStore.petInfo.type || DEFAULT_PET_IMAGE" @error="setImageFallback($event, DEFAULT_PET_IMAGE)" />
+            <img class="chat-avatar" :src="teacherAvatar" @error="setImageFallback($event, teacherAvatar)" />
             <div class="chat-bubble typing">
               <span class="dot"></span><span class="dot"></span><span class="dot"></span>
             </div>
@@ -1108,7 +1412,7 @@ onMounted(async () => {
           </button>
         </div>
         <div class="chat-input-area">
-          <input v-model="chatInput" type="text" placeholder="问我任何关于AI的问题..."
+          <input v-model="chatInput" type="text" :placeholder="`向${teacherName}提问，聊聊你想了解的 AI 知识...`"
                  @keyup.enter="sendChat" :disabled="chatSending" />
           <button @click="sendChat" :disabled="chatSending || !chatInput.trim()" class="send-btn">
             {{ chatSending ? '思考中...' : '发送' }}
@@ -1203,13 +1507,28 @@ onMounted(async () => {
         <div class="quiz-header">
           <h3>云笺小试</h3>
           <p class="quiz-hint">答对每题奖励3积分！</p>
+          <p v-if="supportMessage" class="quiz-hint" role="status">{{ supportMessage }}</p>
+          <p class="quiz-hint">卡住的时候可以找{{ teacherName }}一起看看，累了就先休息，进度会帮你保存到账号里，换个设备登录也能接着做。</p>
           <div class="quiz-btns">
+            <button @click="askTeacherForStuck" :disabled="helpSending" class="action-btn quiz-reset-btn">卡住了</button>
+            <button @click="takeRest" class="action-btn quiz-reset-btn">休息一下</button>
             <button @click="generateQuiz" :disabled="quizLoading" class="action-btn">
               {{ quizLoading ? '生成中...' : (quizStage === 'playing' ? '换一组题' : quizStage === 'finished' ? '再来一关' : '开始闯关') }}
             </button>
             <button v-if="quizStage !== 'idle'" @click="resetQuiz" :disabled="quizLoading" class="action-btn quiz-reset-btn">
               返回
             </button>
+          </div>
+        </div>
+
+        <!-- 上次暂存的闯关进度 -->
+        <div v-if="savedQuizProgress && quizStage === 'idle'" class="quiz-saved-tip">
+          <span class="saved-tip-text">
+            上次暂存了「{{ savedQuizProgress.topic || '云笺小试' }}」的进度（{{ savedProgressLabel }}）{{ savedQuizProgress.savedAt ? '· ' + savedQuizProgress.savedAt : '' }}
+          </span>
+          <div class="quiz-saved-actions">
+            <button class="action-btn" @click="resumeQuizProgress">继续上次进度</button>
+            <button class="tool-btn" @click="clearSavedQuizProgress">不用了</button>
           </div>
         </div>
 
@@ -1270,7 +1589,7 @@ onMounted(async () => {
             <transition name="fade">
               <div v-if="quizFeedback === 'correct'" class="quiz-feedback correct">
                 <span class="feedback-icon">OK!</span>
-                <span class="feedback-text">回答正确！球球前进一步！</span>
+                <span class="feedback-text">回答正确！又掌握了一个知识点！</span>
               </div>
               <div v-else-if="quizFeedback === 'wrong'" class="quiz-feedback wrong">
                 <span class="feedback-icon">X</span>
@@ -1309,7 +1628,7 @@ onMounted(async () => {
         </div>
 
         <div v-else class="empty-state">
-          <p>正在准备题目...</p>
+          <p v-if="!savedQuizProgress">还没有题目，点上面的「开始闯关」就会出几道小题。</p>
         </div>
       </div>
 
@@ -1530,65 +1849,253 @@ onMounted(async () => {
       <!-- 学习路径 -->
       <div v-if="activeTab === 'path'" class="tab-content path-tab">
         <div class="path-header">
-          <h3>个性化学习路径</h3>
-          <button @click="loadLearningPath" :disabled="pathLoading" class="action-btn">
-            {{ pathLoading ? '加载中...' : '刷新建议' }}
-          </button>
+          <div class="path-title-wrap">
+            <h3>个性化学习路径</h3>
+            <p class="path-sub">
+              {{ learningPath ? learningPath.gradeName + '课程 · 按顺序逐项攻克' : 'AI 正在结合你的学习记录生成建议' }}
+            </p>
+          </div>
         </div>
 
-        <div v-if="pathLoading" class="loading-state">
+        <div v-if="pathLoading && !learningPath" class="loading-state">
           <div class="loading-spinner"></div>
           <p>AI正在分析你的学习情况...</p>
         </div>
 
         <div v-else-if="learningPath" class="path-content">
+          <!-- 总体进度条：一眼看到离走完全程还有多远 -->
+          <div class="path-overall">
+            <div class="overall-row">
+              <span class="overall-label">学习进度</span>
+              <span class="overall-value">
+                {{ pathSummary.masteredCount || 0 }} / {{ pathSummary.courseTotal || 0 }} 已掌握
+                （{{ pathSummary.progressPercent || 0 }}%）
+              </span>
+            </div>
+            <div class="overall-bar">
+              <span :style="{ width: (pathSummary.progressPercent || 0) + '%' }"></span>
+            </div>
+            <p class="overall-hint">
+              小测拿一次满分（或编程题全部通过）就能点亮一门课<template v-if="pathSummary.reviewCount">，还有 {{ pathSummary.reviewCount }} 门需要补一补</template>。
+            </p>
+          </div>
+
+          <!-- 学习概览 -->
           <div class="path-info">
             <div class="info-card">
               <span class="info-label">当前年级</span>
               <span class="info-value">{{ learningPath.gradeName }}</span>
+              <span class="info-extra">共 {{ pathSummary.courseTotal || 0 }} 个知识点</span>
             </div>
             <div class="info-card">
-              <span class="info-label">已学知识点</span>
-              <span class="info-value">{{ learningPath.learnedTopics?.length || 0 }} 个</span>
+              <span class="info-label">课程进度</span>
+              <span class="info-value">{{ pathSummary.masteredCount || 0 }} / {{ pathSummary.courseTotal || 0 }}</span>
+              <span class="info-extra">
+                学习中 {{ pathSummary.learningCount || 0 }} · 未开始 {{ pathSummary.todoCount || 0 }}
+              </span>
+            </div>
+            <div class="info-card">
+              <span class="info-label">测验平均分</span>
+              <span class="info-value">{{ pathSummary.quizCount ? pathSummary.quizAvg + ' 分' : '暂无' }}</span>
+              <span class="info-extra">共 {{ pathSummary.quizCount || 0 }} 次 · 最高 {{ pathSummary.quizBest || 0 }} 分</span>
+            </div>
+            <div class="info-card">
+              <span class="info-label">学习记录</span>
+              <span class="info-value">{{ pathSummary.recordCount || 0 }} 条</span>
+              <span class="info-extra">覆盖 {{ pathSummary.learningCount || 0 }} 个知识点</span>
+            </div>
+            <div class="info-card">
+              <span class="info-label">学习天数</span>
+              <span class="info-value">{{ pathSummary.studyDays || 0 }} 天</span>
+              <span class="info-extra">
+                {{ pathSummary.streakDays > 1
+                    ? '已连续 ' + pathSummary.streakDays + ' 天'
+                    : (pathSummary.lastActive ? '最近学习 ' + pathSummary.lastActive : '还没有学习记录') }}
+              </span>
             </div>
             <div class="info-card">
               <span class="info-label">最近成绩</span>
-              <span class="info-value">
-                {{ learningPath.recentScores?.length > 0
-                    ? learningPath.recentScores.map((s: number) => s + '分').join('、')
-                    : '暂无' }}
-              </span>
+              <span class="info-value">{{ recentScoresText }}</span>
+              <span class="info-extra">按时间倒序 · 最多 3 次</span>
             </div>
           </div>
 
-          <div v-if="learningPath.learnedTopics?.length > 0" class="learned-topics">
-            <h4>已学知识点</h4>
-            <div class="topic-tags">
+          <!-- 建议下一步 -->
+          <div v-if="pathNode" class="path-focus" @click="openTopicInChat(pathNode.title, pathNode.id)">
+            <div class="focus-main">
+              <span class="focus-label">建议下一步</span>
+              <span class="focus-topic">
+                {{ pathNode.title }}
+                <span v-if="pathNode.selfRatedHard" class="node-hard-tag">你觉得偏难</span>
+              </span>
+              <span class="focus-meta">
+                {{ pathNode.category }} · {{ difficultyText(pathNode.difficulty) }}
+                <template v-if="pathNode.studyCount"> · 已学习 {{ pathNode.studyCount }} 次</template>
+              </span>
+              <span v-if="pathNode.reason" class="focus-reason">{{ pathNode.reason }}</span>
+            </div>
+            <button class="focus-btn">{{ actionText(pathNode.status) }}</button>
+          </div>
+
+          <!-- 学习路线图 -->
+          <div class="path-section">
+            <div class="section-head">
+              <h4>学习路线图</h4>
+              <span class="section-hint">按课程顺序推进，点击知识点可进入 AI 对话</span>
+            </div>
+            <div v-if="learningPath.roadmap?.length" class="roadmap">
+              <div v-for="(n, i) in learningPath.roadmap" :key="n.id"
+                   class="road-node" :class="n.status"
+                   @click="openTopicInChat(n.title, n.id)">
+                <div class="node-index">{{ n.status === 'mastered' ? '✓' : String(Number(i) + 1).padStart(2, '0') }}</div>
+                <div class="node-body">
+                  <div class="node-title-row">
+                    <span class="node-title">{{ n.title }}</span>
+                    <span v-if="n.selfRatedHard" class="node-hard-tag">你觉得偏难</span>
+                    <span class="node-status" :class="n.status">{{ statusText(n.status) }}</span>
+                  </div>
+                  <div class="node-meta">
+                    <span class="node-cat">{{ n.category }}</span>
+                    <span class="node-diff" :class="n.difficulty">{{ difficultyText(n.difficulty) }}</span>
+                    <span v-if="n.studyCount" class="node-stat">学习 {{ n.studyCount }} 次</span>
+                    <span v-if="n.bestScore" class="node-stat">最好 {{ n.bestScore }} 分</span>
+                    <span v-if="n.lastTime" class="node-time">最近 {{ n.lastTime }}</span>
+                  </div>
+                  <!-- 距离掌握还差什么：把状态机的终点讲明白 -->
+                  <div class="node-progress">
+                    <div class="node-bar"><span :style="{ width: (n.progress || 0) + '%' }"></span></div>
+                    <span class="node-hint">{{ n.hint }}</span>
+                  </div>
+                </div>
+                <span class="node-action">{{ actionText(n.status) }}</span>
+              </div>
+            </div>
+            <p v-else class="path-empty-line">本学段暂未配置课程内容。</p>
+          </div>
+
+          <!-- 已掌握知识点 -->
+          <div class="path-section">
+            <div class="section-head">
+              <h4>已掌握知识点</h4>
+              <span class="section-hint">{{ learningPath.learnedTopics?.length || 0 }} 个 · 小测满分或编程全过即点亮</span>
+            </div>
+            <div v-if="learningPath.learnedTopics?.length" class="topic-tags">
               <span v-for="t in learningPath.learnedTopics" :key="t" class="learned-tag">{{ t }}</span>
             </div>
+            <p v-else class="path-empty-line">还没有达到「已掌握」的知识点，把测验做到满分就可以点亮它。</p>
           </div>
 
-          <div v-if="learningPath.suggestions?.length > 0" class="suggestions">
-            <h4>AI推荐下一步学习</h4>
-            <div v-for="(s, i) in learningPath.suggestions" :key="i" class="suggestion-card"
-                 @click="selectedTopic = s.topic; activeTab = 'chat'">
-              <div class="sug-header">
-                <span class="sug-num">{{ Number(i) + 1 }}</span>
-                <span class="sug-topic">{{ s.topic }}</span>
-                <span class="sug-difficulty" :class="s.difficulty">
-                  {{ s.difficulty === 'easy' ? '入门' : s.difficulty === 'medium' ? '进阶' : '挑战' }}
+          <!-- AI 推荐 -->
+          <div v-if="learningPath.suggestions?.length" class="path-section">
+            <div class="section-head">
+              <h4>AI 推荐下一步学习</h4>
+              <span class="section-hint">点击卡片直接进入 AI 对话</span>
+            </div>
+            <div class="suggestions">
+              <div v-for="(s, i) in learningPath.suggestions" :key="i" class="suggestion-card"
+                   @click="openTopicInChat(s.topic, s.courseId)">
+                <div class="sug-header">
+                  <span class="sug-num">{{ Number(i) + 1 }}</span>
+                  <span class="sug-topic">{{ s.topic }}</span>
+                  <span class="sug-difficulty" :class="s.difficulty">
+                    {{ s.difficulty === 'easy' ? '入门' : s.difficulty === 'medium' ? '进阶' : '挑战' }}
+                  </span>
+                </div>
+                <p class="sug-reason">{{ s.reason }}</p>
+                <span class="sug-hint">
+                  {{ actionText(s.status) }} &gt;&gt;
+                  <template v-if="s.status === 'learning'">（已学一半）</template>
+                  <template v-else-if="s.status === 'mastered'">（巩固复习）</template>
                 </span>
               </div>
-              <p class="sug-reason">{{ s.reason }}</p>
-              <span class="sug-hint">点击开始学习 &gt;&gt;</span>
             </div>
+          </div>
+
+          <!-- 学习方式分布 + 需要复习 -->
+          <div class="path-columns">
+            <div class="path-section">
+              <div class="section-head"><h4>学习方式分布</h4></div>
+              <div v-if="learningPath.typeBreakdown?.length" class="type-list">
+                <div v-for="t in learningPath.typeBreakdown" :key="t.key" class="type-row">
+                  <span class="type-name">{{ t.label }}</span>
+                  <div class="type-bar"><span :style="{ width: typeBarWidth(t.count) }"></span></div>
+                  <span class="type-count">{{ t.count }} 次</span>
+                </div>
+              </div>
+              <p v-else class="path-empty-line">还没有学习记录。</p>
+              <div class="type-extra">
+                <span>生成绘本 {{ pathSummary.bookMade || 0 }} 本</span>
+                <span>编程通过 {{ pathSummary.programmingDone || 0 }} 题</span>
+              </div>
+            </div>
+
+            <div class="path-section">
+              <div class="section-head">
+                <h4>需要复习</h4>
+                <span class="section-hint">小测未满分 / 自评偏难</span>
+              </div>
+              <div v-if="learningPath.weakTopics?.length" class="weak-list">
+                <div v-for="w in learningPath.weakTopics" :key="w.topic" class="weak-item">
+                  <span class="weak-topic">{{ w.topic }}</span>
+                  <span v-if="w.fromRating && !w.bestScore" class="weak-rated">自评偏难</span>
+                  <span v-else class="weak-score">{{ w.bestScore }} 分</span>
+                  <span class="weak-time">{{ w.lastTime }}</span>
+                </div>
+              </div>
+              <p v-else class="path-empty-line">暂无需要复习的知识点。</p>
+            </div>
+          </div>
+
+          <!-- 最近学习动态 -->
+          <div class="path-section">
+            <div class="section-head">
+              <h4>最近学习动态</h4>
+              <span class="section-hint">最近 8 条学习记录</span>
+            </div>
+            <div v-if="learningPath.activity?.length" class="activity-list">
+              <div v-for="(a, i) in learningPath.activity" :key="i" class="activity-item">
+                <span class="act-type" :class="a.type">{{ a.typeLabel }}</span>
+                <span class="act-topic">{{ a.topic }}</span>
+                <span v-if="a.type === 'quiz' && a.score" class="act-score">{{ a.score }} 分</span>
+                <span class="act-time">{{ a.time }}</span>
+              </div>
+            </div>
+            <p v-else class="path-empty-line">还没有学习记录，从上面路线图的第一个知识点开始吧。</p>
           </div>
         </div>
 
         <div v-else class="empty-state">
           <div class="empty-icon">[路径]</div>
-          <p>点击刷新按钮获取个性化学习建议！</p>
+          <p>学习路径正在生成中，稍后会自动重试。</p>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 难题反馈弹窗：请教过老师之后，学生做完这题评价难度 -->
+  <div v-if="ratingOpen" class="rate-mask">
+    <div class="rate-dialog">
+      <div class="rate-illustration">🌟</div>
+      <h4 class="rate-title">这道题感觉怎么样？</h4>
+      <p class="rate-guide">滑动星星告诉我们难度吧</p>
+      <div class="rate-stars-bar">
+        <span class="rate-extreme">很简单</span>
+        <div class="rate-stars">
+          <button v-for="n in 5" :key="n" class="star-btn" :class="{ on: n <= ratingStars }"
+                  :aria-label="`${n} 星`" @click="ratingStars = n">
+            {{ n <= ratingStars ? '★' : '☆' }}
+          </button>
+        </div>
+        <span class="rate-extreme">非常难</span>
+      </div>
+      <p v-if="ratingStarText" class="rate-star-text">{{ ratingStarText }}</p>
+      <div class="rate-tags">
+        <button v-for="t in rateTagOptions" :key="t" class="rate-tag"
+                :class="{ on: ratingTags.includes(t) }" @click="toggleRateTag(t)">{{ t }}</button>
+      </div>
+      <div class="rate-actions">
+        <button class="action-btn" :disabled="!ratingStars" @click="submitRating">提交</button>
+        <button class="tool-btn" @click="closeRating">先跳过</button>
       </div>
     </div>
   </div>
@@ -1596,6 +2103,14 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.teacher-intro { display: flex; align-items: center; gap: 18px; padding: 18px 22px; background: #fff8e8; border-bottom: 1px solid #eee3c8; }
+.teacher-intro.senior { background: #eef6fa; border-color: #dbe8f0; }
+.teacher-intro img { width: 82px; height: 82px; border-radius: 20px; object-fit: cover; flex-shrink: 0; }
+.teacher-intro h3 { margin: 0 0 8px; font-size: 19px; color: #444; }
+.teacher-intro small { display: inline-block; font-size: 11px; font-weight: normal; color: #777; margin-left: 6px; }
+.teacher-intro p { margin: 0; font-size: 13px; line-height: 1.7; color: #666; }
+.teacher-speaker { display: block; margin-bottom: 5px; font-size: 12px; color: #786a9a; }
+
 .ai-learning-page {
   height: 100%;
   flex: 1;
@@ -1875,6 +2390,63 @@ onMounted(async () => {
 .quiz-reset-btn { background: #fff !important; color: #888 !important; border: 1px solid #ddd !important; }
 .quiz-reset-btn:hover { border-color: #bbb !important; color: #555 !important; }
 .quiz-hint { font-size: 13px; color: #888; margin-bottom: 12px; }
+/* 上次暂存的闯关进度 */
+.quiz-saved-tip {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 16px;
+  max-width: 680px; margin: 0 auto 20px; padding: 32px 28px;
+  background: #fff8e1; border: 1px solid #ffe0a3; border-radius: 16px;
+  font-size: 15px; color: #8a6d3b;
+  min-height: 100px;
+}
+.saved-tip-text { line-height: 1.7; font-size: 15px; }
+.quiz-saved-actions { display: flex; gap: 12px; }
+.quiz-saved-actions .action-btn,
+.quiz-saved-actions .tool-btn { padding: 12px 24px; font-size: 14px; }
+
+/* 难题反馈弹窗 */
+.rate-mask {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, .45);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 3000; padding: 20px;
+}
+.rate-dialog {
+  width: 100%; max-width: 420px; background: #fff; border-radius: 20px;
+  padding: 26px 22px 22px; text-align: center;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .2);
+}
+.rate-illustration {
+  width: 56px; height: 56px; margin: 0 auto 12px;
+  background: linear-gradient(135deg, #fff3e0, #ffe0b2); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px;
+}
+.rate-title { font-size: 19px; color: #333; margin: 0 0 6px; font-weight: 600; }
+.rate-guide { font-size: 13px; color: #999; margin: 0 0 18px; }
+.rate-stars-bar {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin-bottom: 8px;
+}
+.rate-extreme {
+  font-size: 12px; color: #bbb; font-weight: 500; white-space: nowrap;
+}
+.rate-stars { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.star-btn {
+  background: none; border: none; cursor: pointer; padding: 2px;
+  font-size: 32px; line-height: 1; color: #e5e5e5; transition: transform .15s, color .15s;
+}
+.star-btn.on { color: #ffb400; }
+.star-btn:hover { transform: scale(1.14); }
+.rate-star-text { font-size: 13px; font-weight: 600; color: #ff9800; margin: 4px 0 16px; min-height: 19px; }
+.rate-tags { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 20px; }
+.rate-tag {
+  font-size: 13px; color: #666; background: #f7f7f7; border: 1px solid #e8e8e8;
+  border-radius: 999px; padding: 7px 14px; cursor: pointer; transition: all .15s;
+}
+.rate-tag:hover { border-color: #ffd08a; color: #e08a00; background: #fff8ef; }
+.rate-tag.on { background: #fff3e0; border-color: #ffb74d; color: #e08a00; font-weight: 600; }
+.rate-actions { display: flex; gap: 10px; justify-content: center; }
+.rate-actions .action-btn,
+.rate-actions .tool-btn { padding: 8px 22px; font-size: 14px; border-radius: 999px; }
 .quiz-list { display: flex; flex-direction: column; gap: 16px; max-width: 700px; margin: 0 auto; }
 .quiz-item {
   background: #fafafa; border-radius: 12px; padding: 16px;
@@ -2290,31 +2862,197 @@ onMounted(async () => {
 
 /* 学习路径 */
 .path-tab { padding: 20px; overflow-y: auto; }
-.path-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.path-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .path-header h3 { font-size: 20px; color: #333; }
-.path-content { max-width: 700px; margin: 0 auto; }
+.path-sub { margin: 6px 0 0; font-size: 12px; color: #999; }
+.path-content { max-width: 980px; margin: 0 auto; }
 .path-info {
-  display: flex; gap: 12px; margin-bottom: 20px;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px; margin-bottom: 16px;
 }
 .info-card {
-  flex: 1; display: flex; flex-direction: column; gap: 4px;
+  display: flex; flex-direction: column; gap: 4px;
   padding: 14px; background: #f5f5f5; border-radius: 10px; text-align: center;
 }
 .info-label { font-size: 12px; color: #888; }
 .info-value { font-size: 16px; font-weight: 600; color: #333; }
-.learned-topics { margin-bottom: 20px; }
-.learned-topics h4 { font-size: 16px; color: #333; margin-bottom: 10px; }
+.info-extra { font-size: 11px; color: #aaa; line-height: 1.5; }
+
+/* 总体进度条 */
+.path-overall {
+  padding: 14px 18px; margin-bottom: 14px;
+  background: linear-gradient(135deg, #fff9ec, #fff4de);
+  border: 1px solid #ffe6bb; border-radius: 12px;
+}
+.overall-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+}
+.overall-label { font-size: 13px; font-weight: 600; color: #b8860b; }
+.overall-value { font-size: 13px; font-weight: 600; color: #333; }
+.overall-bar {
+  height: 10px; margin: 10px 0 8px; border-radius: 10px;
+  background: #ffeccb; overflow: hidden;
+}
+.overall-bar span {
+  display: block; height: 100%; border-radius: 10px; transition: width .4s ease;
+  background: linear-gradient(90deg, #ffd08a, #ffa726);
+}
+.overall-hint { margin: 0; font-size: 11px; color: #b3924f; line-height: 1.6; }
+
+/* 建议下一步 */
+.path-focus {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 14px 18px; margin-bottom: 16px; cursor: pointer; transition: all 0.2s;
+  background: #fff8e1; border: 1px solid #ffe0a3; border-radius: 12px;
+}
+.path-focus:hover { border-color: #ffb74d; background: #fff3d2; }
+.focus-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.focus-label { font-size: 11px; font-weight: 600; color: #c58f19; }
+.focus-topic { font-size: 16px; font-weight: 600; color: #333; }
+.focus-meta { font-size: 12px; color: #999; }
+.focus-reason {
+  margin-top: 2px; font-size: 12px; color: #c58f19; line-height: 1.6;
+}
+.focus-btn {
+  flex-shrink: 0; padding: 8px 18px; border: none; border-radius: 16px;
+  background: #ffb74d; color: #fff; font-size: 13px; cursor: pointer;
+}
+.focus-btn:hover { background: #ffa726; }
+
+/* 分区容器 */
+.path-section {
+  padding: 16px 18px; margin-bottom: 16px;
+  background: #fff; border: 1px solid #f0f0f0; border-radius: 12px;
+}
+.section-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; margin-bottom: 14px;
+}
+.section-head h4 { font-size: 15px; color: #333; margin: 0; }
+.section-hint { font-size: 11px; color: #aaa; }
+.path-empty-line { margin: 0; font-size: 12px; color: #aaa; }
+.path-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+
+/* 学习路线图 */
+.roadmap { display: flex; flex-direction: column; gap: 10px; }
+.road-node {
+  display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; cursor: pointer;
+  border: 1px solid #eee; border-radius: 10px; transition: all 0.2s;
+}
+.road-node:hover { border-color: #ffb74d; background: #fffdf7; }
+.road-node.mastered { background: #f2faf3; border-color: #d7ecd9; }
+.road-node.learning { background: #fff8ec; border-color: #ffe3b8; }
+.road-node.todo { background: #fafafa; }
+.node-index {
+  width: 30px; height: 30px; flex-shrink: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; background: #eee; color: #999;
+}
+.road-node.mastered .node-index { background: #4caf50; color: #fff; }
+.road-node.learning .node-index { background: #ffb74d; color: #fff; }
+.node-body { flex: 1; min-width: 0; }
+.node-title-row { display: flex; align-items: center; gap: 10px; }
+.node-title { font-size: 14px; font-weight: 600; color: #333; }
+.node-status { font-size: 11px; padding: 2px 8px; border-radius: 8px; flex-shrink: 0; }
+.node-status.mastered { background: #e8f5e9; color: #4caf50; }
+.node-status.learning { background: #fff3e0; color: #ff9800; }
+.node-status.todo { background: #f0f0f0; color: #999; }
+.node-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  margin-top: 6px; font-size: 11px; color: #999;
+}
+.node-cat { color: #7e8ba3; }
+.node-diff { padding: 1px 7px; border-radius: 7px; }
+.node-diff.easy { background: #e8f5e9; color: #4caf50; }
+.node-diff.medium { background: #fff3e0; color: #ff9800; }
+.node-diff.hard { background: #ffebee; color: #f44336; }
+.node-time { margin-left: auto; color: #bbb; }
+
+/* 自评偏难标记 */
+.node-hard-tag {
+  flex-shrink: 0; padding: 2px 8px; border-radius: 8px; font-size: 11px;
+  background: #ffebee; color: #e57373; font-weight: 600;
+}
+/* 单课进度条 + 掌握提示 */
+.node-progress {
+  display: flex; align-items: center; gap: 10px; margin-top: 8px;
+}
+.node-bar {
+  width: 90px; height: 6px; flex-shrink: 0; border-radius: 6px;
+  background: #f0f0f0; overflow: hidden;
+}
+.node-bar span {
+  display: block; height: 100%; border-radius: 6px; transition: width .4s ease;
+  background: linear-gradient(90deg, #ffd08a, #ffb74d);
+}
+.road-node.mastered .node-bar span { background: linear-gradient(90deg, #a5d6a7, #4caf50); }
+.node-hint { font-size: 11px; color: #aaa; line-height: 1.5; }
+.node-action {
+  flex-shrink: 0; align-self: center; padding: 5px 12px; border-radius: 14px;
+  font-size: 12px; color: #e08a00; background: #fff3e0; border: 1px solid #ffe0b2;
+}
+.road-node:hover .node-action { background: #ffe0b2; }
+
+/* 学习方式分布 */
+.type-list { display: flex; flex-direction: column; gap: 10px; }
+.type-row { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #666; }
+.type-name { width: 68px; flex-shrink: 0; }
+.type-bar { flex: 1; height: 8px; background: #f0f0f0; border-radius: 8px; overflow: hidden; }
+.type-bar span {
+  display: block; height: 100%; border-radius: 8px;
+  background: linear-gradient(90deg, #ffd08a, #ffb74d);
+}
+.type-count { width: 48px; flex-shrink: 0; text-align: right; color: #999; }
+.type-extra { display: flex; gap: 16px; margin-top: 12px; font-size: 11px; color: #aaa; }
+
+/* 需要复习 */
+.weak-list { display: flex; flex-direction: column; }
+.weak-item {
+  display: flex; align-items: center; gap: 10px; padding: 9px 0;
+  border-bottom: 1px dashed #f0f0f0; font-size: 12px; color: #666;
+}
+.weak-item:last-child { border-bottom: none; }
+.weak-topic { flex: 1; min-width: 0; color: #333; }
+.weak-score { font-weight: 600; color: #ff9800; }
+.weak-rated {
+  flex-shrink: 0; padding: 1px 8px; border-radius: 8px;
+  font-size: 11px; font-weight: 600; background: #ffebee; color: #e57373;
+}
+.weak-time { flex-shrink: 0; font-size: 11px; color: #bbb; }
+
+/* 最近学习动态 */
+.activity-list { display: flex; flex-direction: column; }
+.activity-item {
+  display: flex; align-items: center; gap: 10px; padding: 9px 0;
+  border-bottom: 1px dashed #f0f0f0; font-size: 12px; color: #666;
+}
+.activity-item:last-child { border-bottom: none; }
+.act-type {
+  flex-shrink: 0; padding: 2px 8px; border-radius: 8px;
+  font-size: 11px; background: #f0f4ff; color: #6b7fd0;
+}
+.act-type.quiz { background: #fff3e0; color: #ff9800; }
+.act-type.book { background: #e8f5e9; color: #4caf50; }
+.act-type.animation { background: #e9f4fb; color: #4aa3d0; }
+.act-type.programming { background: #f3e9ff; color: #8e6fd0; }
+.act-topic { flex: 1; min-width: 0; color: #333; }
+.act-score { font-weight: 600; color: #ff9800; }
+.act-time { flex-shrink: 0; font-size: 11px; color: #bbb; }
+
+/* 已掌握知识点 */
 .topic-tags { display: flex; flex-wrap: wrap; gap: 8px; }
 .learned-tag {
   padding: 6px 14px; background: #e8f5e9; color: #4caf50;
   border-radius: 16px; font-size: 13px; font-weight: 500;
 }
-.suggestions h4 { font-size: 16px; color: #333; margin-bottom: 12px; }
+
+/* AI 推荐卡片 */
 .suggestion-card {
   padding: 16px; background: #f5f5f5; border-radius: 12px;
   margin-bottom: 12px; cursor: pointer; transition: all 0.2s;
   border: 2px solid transparent;
 }
+.suggestion-card:last-child { margin-bottom: 0; }
 .suggestion-card:hover { border-color: #ffb74d; background: #fff8e1; }
 .sug-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .sug-num {
@@ -2331,6 +3069,12 @@ onMounted(async () => {
 .sug-difficulty.hard { background: #ffebee; color: #f44336; }
 .sug-reason { font-size: 13px; color: #666; line-height: 1.5; }
 .sug-hint { font-size: 12px; color: #ffb74d; font-weight: 500; }
+
+@media (max-width: 900px) {
+  .path-info { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .path-columns { grid-template-columns: 1fr; }
+  .section-head { flex-direction: column; gap: 4px; }
+}
 
 /* 滚动条 */
 .course-list::-webkit-scrollbar,

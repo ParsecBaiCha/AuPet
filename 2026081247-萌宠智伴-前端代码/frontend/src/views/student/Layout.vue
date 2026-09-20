@@ -89,7 +89,7 @@ const navItems = computed(() => [
   { path: '/student', label: isSenior.value ? '学习概览' : '班级首页', icon: '/images/Student_Navigation_Bar/首页.svg' },
   { path: '/student/ai-learning', label: isSenior.value ? 'AI 研习' : 'AI通识课', icon: '/images/Student_Navigation_Bar/聊天.svg' },
   { path: '/student/my-pet', label: isSenior.value ? '伙伴档案' : '我的宠物', icon: '/images/Student_Navigation_Bar/携带宠物.svg' },
-  { path: '/student/ai-companion', label: isSenior.value ? '心情对话' : '智能情感交流', icon: '/images/Student_Navigation_Bar/聊天.svg' },
+  { path: '/student/ai-companion', label: '知心畅聊', icon: '/images/Student_Navigation_Bar/聊天.svg' },
   { path: '/student/growth-diary', label: isSenior.value ? '成长记录' : '成长日记', icon: '/images/Student_Navigation_Bar/日记.svg' },
   { path: '/student/tasks', label: isSenior.value ? '学习计划' : '当日任务', icon: '/images/Student_Navigation_Bar/任务.svg' },
   { path: '/student/settings', label: '设置', icon: '/images/Student_Navigation_Bar/设置.svg' },
@@ -100,11 +100,15 @@ const currentTitle = computed(() => {
   return item?.label || (isSenior.value ? '学习概览' : '班级首页')
 })
 
-const dailyTimeLimit = ref(3 * 60 * 60)
-const remainingTime = ref(3 * 60 * 60)
+const DAILY_TIME_LIMIT = 3 * 60 * 60  // 每日使用时长上限：3 小时
+const TIME_STORAGE_KEY = 'studentRemainingTime'
+
+const dailyTimeLimit = ref(DAILY_TIME_LIMIT)
+const remainingTime = ref(DAILY_TIME_LIMIT)
 const showTimeWarning = ref(false)
 const showTimeUpDialog = ref(false)
 let timer: number | null = null
+let currentDay = ''
 
 const formatTime = (seconds: number) => {
   const hours = Math.floor(seconds / 3600)
@@ -113,14 +117,49 @@ const formatTime = (seconds: number) => {
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
 
-const updateRemainingTime = () => {
-  remainingTime.value--
-  if (remainingTime.value <= 0) {
-    showTimeUpDialog.value = true
-    if (timer) clearInterval(timer)
-  } else if (remainingTime.value === 300) {
-    showTimeWarning.value = true
+// 本地日期（YYYY-MM-DD），用于判断是否跨天
+const todayKey = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// 读取今日剩余时长：跨天（或旧版无日期的数据）一律恢复为完整额度
+const loadRemainingTime = () => {
+  const raw = localStorage.getItem(TIME_STORAGE_KEY)
+  if (!raw) return dailyTimeLimit.value
+  try {
+    const data = JSON.parse(raw)
+    if (data && typeof data === 'object' && typeof data.date === 'string' && typeof data.remaining === 'number') {
+      if (data.date !== currentDay) return dailyTimeLimit.value
+      return Math.min(dailyTimeLimit.value, Math.max(0, Math.floor(data.remaining)))
+    }
+  } catch { /* 旧格式为纯数字，无法判断日期，按新的一天处理 */ }
+  return dailyTimeLimit.value
+}
+
+const saveRemainingTime = () => {
+  localStorage.setItem(TIME_STORAGE_KEY, JSON.stringify({ date: currentDay, remaining: remainingTime.value }))
+}
+
+const tick = () => {
+  const today = todayKey()
+  // 跨天：恢复新的每日额度，并清掉上一日的提醒状态
+  if (today !== currentDay) {
+    currentDay = today
+    remainingTime.value = dailyTimeLimit.value
+    showTimeWarning.value = false
+    showTimeUpDialog.value = false
+    saveRemainingTime()
+    return
   }
+  if (remainingTime.value <= 0) return
+  remainingTime.value--
+  if (remainingTime.value === 300) {
+    showTimeWarning.value = true
+  } else if (remainingTime.value === 0) {
+    showTimeUpDialog.value = true
+  }
+  saveRemainingTime()
 }
 
 const closeWarning = () => { showTimeWarning.value = false }
@@ -128,16 +167,10 @@ const closeTimeUpDialog = () => { showTimeUpDialog.value = false }
 
 onMounted(() => {
   store.load()
-  const savedRemaining = localStorage.getItem('studentRemainingTime')
-  if (savedRemaining) {
-    remainingTime.value = parseInt(savedRemaining)
-  }
-  if (remainingTime.value > 0) {
-    timer = window.setInterval(() => {
-      updateRemainingTime()
-      localStorage.setItem('studentRemainingTime', remainingTime.value.toString())
-    }, 1000)
-  }
+  currentDay = todayKey()
+  remainingTime.value = loadRemainingTime()
+  saveRemainingTime()
+  timer = window.setInterval(tick, 1000)
 })
 
 onUnmounted(() => {
