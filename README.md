@@ -92,7 +92,7 @@
 | 班级首页 | `/student` | 展示个人宠物、积分排名、班级宠物墙 |
 | 我的宠物 | `/student/my-pet` | 宠物状态管理、积分商城购买食物、宠物商店 |
 | AI 学习 | `/student/ai-learning` | AI 通识课学习、测验、故事绘本、动画讲解 |
-| 智能情感交流 | `/student/ai-companion` | 与 AI 宠物伙伴对话，支持年级自适应 |
+| 知心畅聊 | `/student/ai-companion` | 与 AI 宠物伙伴对话，支持年级自适应 |
 | 成长日记 | `/student/growth-diary` | 心情记录、目标管理、成就解锁、积分图表 |
 | 当日任务 | `/student/tasks` | 查看并完成教师布置的日常/周任务 |
 | 设置 | `/student/settings` | 修改个人信息与宠物信息 |

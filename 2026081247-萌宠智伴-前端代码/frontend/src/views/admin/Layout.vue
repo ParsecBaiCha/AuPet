@@ -50,6 +50,24 @@
 
         <div class="nav-group">
           <div class="nav-title">
+            <img src="/images/Admin_Icons/Classwiththehighestpoints.svg" class="nav-icon-img" alt="ai" />
+            <span>AI 管理</span>
+          </div>
+          <div class="nav-items">
+            <router-link to="/admin/ai-courses" class="nav-item" :class="{ active: route.path === '/admin/ai-courses' }">
+              <span>AI 课程库</span>
+            </router-link>
+            <router-link to="/admin/ai-overview" class="nav-item" :class="{ active: route.path === '/admin/ai-overview' }">
+              <span>AI 使用总览</span>
+            </router-link>
+            <router-link to="/admin/ai-reviews" class="nav-item" :class="{ active: route.path === '/admin/ai-reviews' }">
+              <span>AI 内容审核</span>
+            </router-link>
+          </div>
+        </div>
+
+        <div class="nav-group">
+          <div class="nav-title">
             <img src="/images/Admin_Icons/points.svg" class="nav-icon-img" alt="points" />
             <span>积分管理</span>
           </div>
@@ -152,6 +170,9 @@ const pageTitle = computed(() => {
     '/admin/daily-forum': '日常论坛',
     '/admin/subject-forum': '学科论坛',
     '/admin/points': '积分概览',
+    '/admin/ai-courses': 'AI 课程库',
+    '/admin/ai-overview': 'AI 使用总览',
+    '/admin/ai-reviews': 'AI 内容审核',
   }
   return (route.meta?.title as string) || pathMap[route.path] || '管理员端'
 })

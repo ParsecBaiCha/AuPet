@@ -5,9 +5,12 @@
         <span class="logo-text">教师工作台</span>
       </div>
       <div class="header-right">
-        <el-badge :value="3" class="icon-badge">
-          <el-icon class="header-icon"><Bell /></el-icon>
-        </el-badge>
+        <button class="support-notification" aria-label="查看学习关怀提醒" @click="router.push('/teacher/intervention')">
+          <el-badge :value="supportCount" :hidden="supportCount === 0" class="icon-badge">
+            <el-icon class="header-icon"><Bell /></el-icon>
+          </el-badge>
+          <span>学习关怀</span>
+        </button>
         <el-badge :value="5" class="icon-badge">
           <el-icon class="header-icon"><Message /></el-icon>
         </el-badge>
@@ -77,6 +80,25 @@
             <el-icon><FolderOpened /></el-icon>
             <span>资料管理</span>
           </router-link>
+
+          <div class="nav-group">
+            <router-link to="/teacher/ai-board" class="nav-item" :class="{ active: route.path === '/teacher/ai-board' }">
+              <el-icon><DataAnalysis /></el-icon>
+              <span>AI 学习看板</span>
+            </router-link>
+            <router-link to="/teacher/ai-chat-monitor" class="nav-item" :class="{ active: route.path === '/teacher/ai-chat-monitor' }">
+              <el-icon><ChatLineRound /></el-icon>
+              <span>对话查看与关注</span>
+            </router-link>
+            <router-link to="/teacher/ai-course-content" class="nav-item" :class="{ active: route.path === '/teacher/ai-course-content' }">
+              <el-icon><Notebook /></el-icon>
+              <span>AI 课程内容</span>
+            </router-link>
+            <router-link to="/teacher/ai-book-assets" class="nav-item" :class="{ active: route.path === '/teacher/ai-book-assets' }">
+              <el-icon><PictureFilled /></el-icon>
+              <span>照片绘本素材</span>
+            </router-link>
+          </div>
         </nav>
       </aside>
 
@@ -86,7 +108,7 @@
         </div>
         <div class="content-body">
           <router-view v-slot="{ Component }">
-            <keep-alive :max="8">
+            <keep-alive :max="16">
               <component :is="Component" />
             </keep-alive>
           </router-view>
@@ -97,17 +119,41 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { teacherApi } from '../../api/teacher'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '../../stores/app'
 import {
   HomeFilled, Coin, OfficeBuilding, UserFilled, Connection,
-  DataLine, WarningFilled, ChatDotSquare, Bell, Message, FolderOpened
+  DataLine, WarningFilled, ChatDotSquare, Bell, Message, FolderOpened,
+  DataAnalysis, ChatLineRound, Notebook, PictureFilled
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 const store = useAppStore()
+const supportCount = ref(0)
+let supportTimer: ReturnType<typeof setInterval> | undefined
+const refreshSupport = async () => {
+  try {
+    const data: any = await teacherApi.getLearningSupport()
+    supportCount.value = data.pendingCount
+  } catch { /* 下一轮刷新重试 */ }
+}
+onMounted(() => {
+  refreshSupport()
+  supportTimer = setInterval(refreshSupport, 30000)
+  window.addEventListener('learning-support-updated', refreshSupport)
+  // 首次登录跳转过来时，flex 容器宽度可能尚未稳定，触发一次 resize
+  // 让 Element Plus 的表格/布局组件重新计算尺寸
+  nextTick(() => {
+    window.dispatchEvent(new Event('resize'))
+  })
+})
+onUnmounted(() => {
+  if (supportTimer) clearInterval(supportTimer)
+  window.removeEventListener('learning-support-updated', refreshSupport)
+})
 
 const handleCommand = (command: string) => {
   if (command === 'profile') {
@@ -129,10 +175,18 @@ const pageTitle = computed(() => {
     '/teacher/intervention': '干预管理',
     '/teacher/forum': '交流论坛',
     '/teacher/materials': '资料管理',
+    '/teacher/ai-board': 'AI 学习看板',
+    '/teacher/ai-chat-monitor': '对话查看与关注',
+    '/teacher/ai-course-content': 'AI 课程内容',
+    '/teacher/ai-book-assets': '照片绘本素材',
   }
   return pathMap[route.path] || '教师工作台'
 })
 </script>
+
+<style scoped>
+.support-notification { display: flex; align-items: center; gap: 10px; border: 0; background: transparent; color: #665b9c; cursor: pointer; }
+</style>
 
 <style scoped>
 .app-container {

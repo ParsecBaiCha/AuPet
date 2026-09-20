@@ -26,4 +26,19 @@ export const adminApi = {
   getPointOverview: (): ApiResult => api.get('/admin/points/overview'),
   getPointRankings: (params?: any): ApiResult => api.get('/admin/points/rankings', { params }),
   getPointTrend: (): ApiResult => api.get('/admin/points/trend'),
+
+  // ===== AI 研习配套：课程库 =====
+  getAICourses: (params?: any): ApiResult => api.get('/admin/ai/courses', { params }),
+  createAICourse: (data: any): ApiResult => api.post('/admin/ai/courses', data),
+  updateAICourse: (id: number, data: any): ApiResult => api.put(`/admin/ai/courses/${id}`, data),
+  setAICourseStatus: (id: number, status: 'published' | 'archived'): ApiResult =>
+    api.post(`/admin/ai/courses/${id}/status`, { status }),
+  deleteAICourse: (id: number): ApiResult => api.delete(`/admin/ai/courses/${id}`),
+
+  // ===== AI 研习配套：使用总览与内容审核 =====
+  getAIOverview: (params?: any): ApiResult => api.get('/admin/ai/overview', { params }),
+  getAIReviews: (params?: any): ApiResult => api.get('/admin/ai/reviews', { params }),
+  reviewAIContent: (data: { objectType: 'chat' | 'material'; objectId: number; result: string; remark?: string }): ApiResult =>
+    api.post('/admin/ai/reviews', data),
+  getAIAuditLogs: (params?: any): ApiResult => api.get('/admin/ai/audit-logs', { params }),
 }

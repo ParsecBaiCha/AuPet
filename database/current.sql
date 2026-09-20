@@ -712,3 +712,31 @@ UNLOCK TABLES;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
 -- Dump completed on 2026-09-14  2:00:48
+
+--
+-- 2026-09-17 新增：在线编程练习提交记录表
+-- 用途：学生在 /online-programming 页面写的代码与判题结果回写后端，
+--       供教师端「AI 学习看板 - 在线编程练习」查看、供学习路径统计。
+--       同步脚本见 database/20260917_programming_records.sql
+--
+
+CREATE TABLE IF NOT EXISTS `programming_submissions` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `student_id` int NOT NULL COMMENT '关联 students.id',
+  `course_key` varchar(40) NOT NULL COMMENT '在线编程课程标识，如 deep/data',
+  `course_title` varchar(100) DEFAULT NULL COMMENT '课程标题，用于匹配 ai_courses.title',
+  `course_id` int DEFAULT '0' COMMENT '关联 ai_courses.id，0 表示未匹配到课程',
+  `task_index` int NOT NULL DEFAULT '0' COMMENT '题目序号，从 0 开始',
+  `task_title` varchar(200) DEFAULT NULL COMMENT '题目名称',
+  `language` varchar(20) DEFAULT 'Python' COMMENT '编程语言',
+  `code` mediumtext COMMENT '学生本次提交的代码',
+  `passed` int DEFAULT '0' COMMENT '通过的测试数',
+  `total` int DEFAULT '0' COMMENT '测试用例总数',
+  `all_passed` tinyint DEFAULT '0' COMMENT '1=全部测试通过',
+  `output` text COMMENT '运行输出（截断保存）',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_student_time` (`student_id`,`created_at`),
+  KEY `idx_student_course` (`student_id`,`course_key`,`task_index`),
+  KEY `idx_course_time` (`course_id`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='在线编程练习提交记录';

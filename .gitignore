@@ -32,5 +32,11 @@ desktop.ini
 # ===== Local workspace metadata =====
 .workbuddy/
 
+# ===== 临时工作目录（体积大，不入库）=====
+tmp/
+
+# ===== 运行时上传目录（用户上传内容，不入库）=====
+2026081247-萌宠智伴-前端代码/frontend/public/uploads/
+
 # ===== 日志 =====
 *.log

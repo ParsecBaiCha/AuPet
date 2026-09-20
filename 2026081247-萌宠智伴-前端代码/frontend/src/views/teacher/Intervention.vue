@@ -1,5 +1,6 @@
 <template>
   <div class="intervention-container">
+    <LearningSupportPanel />
     <div class="filter-bar">
       <div class="filter-left">
         <el-select v-model="selectedClass" placeholder="请选择班级" style="width: 140px">
@@ -22,7 +23,7 @@
       <div class="card-header">
         <h3 class="card-title"><el-icon><WarningFilled /></el-icon> 异常学生列表</h3>
       </div>
-      <el-table :data="abnormalStudents" stripe>
+      <el-table :data="abnormalStudents" stripe width="100%">
         <el-table-column prop="name" label="学生姓名" width="100" />
         <el-table-column prop="class" label="班级" width="120" />
         <el-table-column prop="abnormalType" label="异常类型" width="120">
@@ -245,6 +246,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { WarningFilled, Document, Collection, DataAnalysis } from '@element-plus/icons-vue'
 import { teacherApi } from '../../api/teacher'
+import LearningSupportPanel from '../../components/LearningSupportPanel.vue'
 
 const selectedClass = ref('')
 const statusFilter = ref('')
